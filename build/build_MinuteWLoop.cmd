@@ -9,5 +9,8 @@ if not exist "%CSC%" (
   exit /b 1
 )
 
-"%CSC%" /nologo /optimize+ /target:exe /out:MinuteWLoop.exe MinuteWLoop.cs
+set BASE=%~dp0..
+if not exist "%BASE%\bin" mkdir "%BASE%\bin"
+
+"%CSC%" /nologo /optimize+ /target:exe /out:"%BASE%\bin\MinuteWLoop.exe" "%BASE%\src\MinuteWLoop.cs"
 exit /b %ERRORLEVEL%

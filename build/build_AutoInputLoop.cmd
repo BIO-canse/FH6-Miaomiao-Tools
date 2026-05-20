@@ -9,5 +9,8 @@ if not exist "%CSC%" (
   exit /b 1
 )
 
-"%CSC%" /nologo /optimize+ /target:exe /out:AutoInputLoop.exe Program.cs
+set BASE=%~dp0..
+if not exist "%BASE%\bin" mkdir "%BASE%\bin"
+
+"%CSC%" /nologo /optimize+ /target:exe /out:"%BASE%\bin\AutoInputLoop.exe" "%BASE%\src\AutoInputLoop.cs"
 exit /b %ERRORLEVEL%
