@@ -68,7 +68,6 @@ namespace FH6SkillPointOcr
                 WaitBeforeUiOcrCapture("before OCR " + cacheLabel);
                 last = ReadScreen();
                 List<OcrMatch> matches = FindConfiguredCjkTextMatches(last, config.ManufacturerText);
-                matches = FilterManufacturerMatches(matches);
                 SetOcrFields(new OcrFieldGroup(cacheLabel, matches));
                 SetOcrSummary("制造商OCR: " + config.ManufacturerText + "=" + matches.Count + "，尝试 " + (i + 1) + "/" + attempts + "，" + CaptureSummary(last));
                 if (matches.Count > 0)
@@ -119,13 +118,5 @@ namespace FH6SkillPointOcr
                 snapshot.Screenshot.Image.Height);
         }
 
-        private static List<OcrMatch> FilterManufacturerMatches(List<OcrMatch> matches)
-        {
-            Rectangle virtualScreen = SystemInformation.VirtualScreen;
-            RectangleF overlayPanel = new RectangleF(virtualScreen.Left, virtualScreen.Top, 940, 460);
-            return matches
-                .Where(match => !overlayPanel.IntersectsWith(match.Rect))
-                .ToList();
-        }
     }
 }

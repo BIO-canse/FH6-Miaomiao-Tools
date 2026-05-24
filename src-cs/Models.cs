@@ -36,6 +36,10 @@ namespace FH6SkillPointOcr
         public List<OcrMatch> Words;
         public List<List<OcrMatch>> WordLines;
         public List<OcrMatch> Lines;
+        public string EngineName = "";
+        public string RawResponse = "";
+        public string ErrorOutput = "";
+        public string EngineDiagnostics = "";
         public OcrSnapshot(Screenshot screenshot, List<OcrMatch> words, List<List<OcrMatch>> wordLines, List<OcrMatch> lines)
         {
             Screenshot = screenshot;

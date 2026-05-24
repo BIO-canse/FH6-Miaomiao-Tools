@@ -49,8 +49,26 @@ namespace FH6SkillPointOcr
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
                 sb.AppendLine("reason=" + reason);
+                sb.AppendLine("status=" + status);
+                sb.AppendLine("stage=" + bigStage);
+                sb.AppendLine("next=" + nextAction);
                 sb.AppendLine("target_vehicle=" + config.TargetVehicleText);
                 sb.AppendLine("new_badge=" + config.NewBadgeText);
+                sb.AppendLine("manufacturer=" + config.ManufacturerText);
+                if (snapshot != null)
+                {
+                    sb.AppendLine("engine=" + snapshot.EngineName);
+                    if (snapshot.Screenshot != null && snapshot.Screenshot.Image != null)
+                    {
+                        sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "capture_origin=[{0},{1}]", snapshot.Screenshot.Left, snapshot.Screenshot.Top));
+                        sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "capture_size=[{0},{1}]", snapshot.Screenshot.Image.Width, snapshot.Screenshot.Image.Height));
+                    }
+                    sb.AppendLine("word_count=" + (snapshot.Words == null ? 0 : snapshot.Words.Count).ToString(CultureInfo.InvariantCulture));
+                    sb.AppendLine("line_count=" + (snapshot.Lines == null ? 0 : snapshot.Lines.Count).ToString(CultureInfo.InvariantCulture));
+                    AppendSection(sb, "engine_diagnostics", snapshot.EngineDiagnostics, 6000);
+                    AppendSection(sb, "ocr_stderr", snapshot.ErrorOutput, 12000);
+                    AppendSection(sb, "raw_ocr_response", snapshot.RawResponse, 120000);
+                }
                 if (snapshot == null || snapshot.Words == null || snapshot.Words.Count == 0)
                 {
                     sb.AppendLine("OCR: 无");
@@ -99,6 +117,13 @@ namespace FH6SkillPointOcr
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "capture_size=[{0},{1}]", snapshot.Screenshot.Image.Width, snapshot.Screenshot.Image.Height));
                 sb.AppendLine("image=" + Path.GetFileName(imagePath));
                 sb.AppendLine("ocr_text=" + DescribeOcrText(snapshot, 160));
+                if (snapshot != null)
+                {
+                    sb.AppendLine("engine=" + snapshot.EngineName);
+                    AppendSection(sb, "engine_diagnostics", snapshot.EngineDiagnostics, 6000);
+                    AppendSection(sb, "ocr_stderr", snapshot.ErrorOutput, 12000);
+                    AppendSection(sb, "raw_ocr_response", snapshot.RawResponse, 120000);
+                }
                 File.WriteAllText(metaPath, sb.ToString(), Encoding.UTF8);
             }
             catch
@@ -213,6 +238,25 @@ namespace FH6SkillPointOcr
             string safe = Regex.Replace(value ?? "capture", @"[^A-Za-z0-9_-]+", "_");
             safe = safe.Trim('_');
             return safe.Length == 0 ? "capture" : safe;
+        }
+
+        private static void AppendSection(StringBuilder sb, string title, string body, int maxChars)
+        {
+            sb.AppendLine("---- " + title + " ----");
+            if (string.IsNullOrEmpty(body))
+            {
+                sb.AppendLine("(empty)");
+                return;
+            }
+
+            if (body.Length <= maxChars)
+            {
+                sb.AppendLine(body);
+                return;
+            }
+
+            sb.AppendLine(body.Substring(0, maxChars));
+            sb.AppendLine("... truncated, total_chars=" + body.Length.ToString(CultureInfo.InvariantCulture));
         }
     }
 }

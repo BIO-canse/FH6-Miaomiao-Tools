@@ -126,6 +126,9 @@ namespace FH6SkillPointOcr
 
                 string tsv = RunTesseract(tempImage, psm);
                 OcrSnapshot snapshot = ParseTsv(tsv, screenshot);
+                snapshot.EngineName = "Tesseract";
+                snapshot.RawResponse = tsv;
+                snapshot.EngineDiagnostics = "engine=Tesseract\r\ntesseract_path=" + tesseractPath + "\r\ntesseract_dir=" + tesseractDir;
                 return snapshot;
             }
             finally
@@ -152,7 +155,9 @@ namespace FH6SkillPointOcr
             }
 
             SaveDebugText(debugLabel, "ocr-response", line);
-            return ParseOcrJson(line, screenshot, "PaddleOCR", PaddleOcrErrorSuffix());
+            OcrSnapshot snapshot = ParseOcrJson(line, screenshot, "PaddleOCR", PaddleOcrErrorSuffix());
+            AttachBridgeDiagnostics(snapshot, "PaddleOCR", line, paddleOcrProcess, paddleOcrPython, paddleOcrBridge, paddleOcrErrors);
+            return snapshot;
         }
 
         private OcrSnapshot ReadRapidOcr(Screenshot screenshot, string debugLabel)
@@ -173,7 +178,9 @@ namespace FH6SkillPointOcr
             }
 
             SaveDebugText(debugLabel, "ocr-response", line);
-            return ParseOcrJson(line, screenshot, "RapidOCR", RapidOcrErrorSuffix());
+            OcrSnapshot snapshot = ParseOcrJson(line, screenshot, "RapidOCR", RapidOcrErrorSuffix());
+            AttachBridgeDiagnostics(snapshot, "RapidOCR", line, rapidOcrProcess, rapidOcrPython, rapidOcrBridge, rapidOcrErrors);
+            return snapshot;
         }
 
         private string EncodeOcrImage(Screenshot screenshot, string debugLabel)
@@ -617,6 +624,40 @@ namespace FH6SkillPointOcr
             PrependPythonPath(psi, config.ResolvePath(Path.Combine("runtime", "paddleocr-py")));
             PrependPythonPath(psi, config.ResolvePath(Path.Combine("runtime", "rapidocr-py")));
             return psi;
+        }
+
+        private void AttachBridgeDiagnostics(OcrSnapshot snapshot, string engineName, string rawResponse, Process process, string pythonPath, string bridgePath, StringBuilder errors)
+        {
+            if (snapshot == null) return;
+
+            string stderr;
+            lock (errors)
+            {
+                stderr = errors.ToString();
+            }
+
+            snapshot.EngineName = engineName;
+            snapshot.RawResponse = rawResponse ?? "";
+            snapshot.ErrorOutput = stderr ?? "";
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("engine=" + engineName);
+            sb.AppendLine("base_dir=" + config.BaseDir);
+            sb.AppendLine("python=" + pythonPath);
+            sb.AppendLine("python_exists=" + File.Exists(pythonPath));
+            sb.AppendLine("bridge=" + bridgePath);
+            sb.AppendLine("bridge_exists=" + File.Exists(bridgePath));
+            sb.AppendLine("ocr_scale=" + config.OcrScale.ToString("0.###", CultureInfo.InvariantCulture));
+            if (process == null)
+            {
+                sb.AppendLine("process=null");
+            }
+            else
+            {
+                sb.AppendLine("process_id=" + process.Id.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine("process_has_exited=" + process.HasExited);
+                if (process.HasExited) sb.AppendLine("process_exit_code=" + process.ExitCode.ToString(CultureInfo.InvariantCulture));
+            }
+            snapshot.EngineDiagnostics = sb.ToString();
         }
 
         private static void PrependPythonPath(ProcessStartInfo psi, string path)
