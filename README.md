@@ -20,6 +20,15 @@
 
 如果游戏以管理员权限运行，本工具也需要右键“以管理员身份运行”，否则游戏可能收不到键鼠输入。
 
+解压后，普通用户只需要看根目录：
+
+- `FH6FullAuto.exe`：全自动主程序，主要入口。
+- `AutoInputLoop.exe`：迎战巨汉 CR 挂机辅助。
+- `EnterTapLoop.exe`：快速开启大量抽奖、超级抽奖。
+- `README.md` / `使用说明.txt`：使用说明。
+
+`bin/`、`runtime/`、`config/`、`assets/` 是程序运行需要的内部文件夹，不要删除或移动。
+
 ## 前置准备
 
 ### 1. 准备两辆 1998 斯巴鲁 Impreza 22B-STI Version
