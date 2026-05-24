@@ -53,6 +53,8 @@ namespace FH6AutomationShared
             public const double Scale = 2.0;
             public const double MinConfidence = 0;
             public const int Psm = 6;
+            public const int BridgeInitTimeoutMs = 180000;
+            public const int BridgeRequestTimeoutMs = 120000;
             public const int GridCapturePaddingPx = 24;
             public const int UiFindAttempts = 6;
             public const int TargetVehicleLatinFuzzyDistance = 2;

@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using FH6AutomationShared;
 
 namespace FH6SkillPointOcr
 {
@@ -53,6 +54,7 @@ namespace FH6SkillPointOcr
             {
                 if (!File.Exists(paddleOcrPython)) throw new FileNotFoundException("找不到 PaddleOCR Python", paddleOcrPython);
                 if (!File.Exists(paddleOcrBridge)) throw new FileNotFoundException("找不到 PaddleOCR bridge", paddleOcrBridge);
+                ValidatePaddleRuntime();
             }
             else if (useRapidOcr)
             {
@@ -66,6 +68,32 @@ namespace FH6SkillPointOcr
             tempDir = Path.Combine(Path.GetTempPath(), "FH6SkillPointOcr", "ocr-temp");
             Directory.CreateDirectory(tempDir);
             if (!string.IsNullOrWhiteSpace(debugImageDir)) Directory.CreateDirectory(debugImageDir);
+        }
+
+        private void ValidatePaddleRuntime()
+        {
+            ValidateBundledPythonRuntime();
+            string site = config.ResolvePath(Path.Combine("runtime", "paddleocr-py"));
+            string det = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", "PP-OCRv5_mobile_det", "inference.pdiparams"));
+            string rec = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", "PP-OCRv5_mobile_rec", "inference.pdiparams"));
+            string paddleLib = config.ResolvePath(Path.Combine("runtime", "paddleocr-py", "paddle", "base", "libpaddle.pyd"));
+            if (!Directory.Exists(site)) throw new DirectoryNotFoundException("找不到 PaddleOCR 依赖目录：" + site + "\r\n请完整解压发布包，不要只复制 exe。");
+            if (!File.Exists(paddleLib)) throw new FileNotFoundException("找不到 PaddlePaddle 核心库，请完整解压发布包或检查杀毒软件是否隔离文件。", paddleLib);
+            if (!File.Exists(det)) throw new FileNotFoundException("找不到 PaddleOCR 检测模型，请下载完整新版压缩包并完整解压。", det);
+            if (!File.Exists(rec)) throw new FileNotFoundException("找不到 PaddleOCR 识别模型，请下载完整新版压缩包并完整解压。", rec);
+        }
+
+        private void ValidateBundledPythonRuntime()
+        {
+            string localPython = Path.Combine(config.BaseDir, "runtime", "python", "python.exe");
+            if (!string.Equals(Path.GetFullPath(paddleOcrPython), Path.GetFullPath(localPython), StringComparison.OrdinalIgnoreCase)) return;
+
+            string pythonDll = Path.Combine(config.BaseDir, "runtime", "python", "python312.dll");
+            string vcRuntime = Path.Combine(config.BaseDir, "runtime", "python", "vcruntime140.dll");
+            string vcRuntimeExtra = Path.Combine(config.BaseDir, "runtime", "python", "vcruntime140_1.dll");
+            if (!File.Exists(pythonDll)) throw new FileNotFoundException("包内 Python 不完整，缺少 python312.dll。请完整解压发布包。", pythonDll);
+            if (!File.Exists(vcRuntime)) throw new FileNotFoundException("包内 Python 不完整，缺少 vcruntime140.dll。请完整解压发布包。", vcRuntime);
+            if (!File.Exists(vcRuntimeExtra)) throw new FileNotFoundException("包内 Python 不完整，缺少 vcruntime140_1.dll。请完整解压发布包。", vcRuntimeExtra);
         }
 
         public OcrSnapshot Read(Screenshot screenshot)
@@ -113,7 +141,11 @@ namespace FH6SkillPointOcr
             paddleOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + imageBase64 + "\"}");
             paddleOcrProcess.StandardInput.Flush();
 
-            string line = paddleOcrProcess.StandardOutput.ReadLine();
+            string line = ReadBridgeLineWithTimeout(
+                paddleOcrProcess,
+                FH6AutomationConstants.Ocr.BridgeRequestTimeoutMs,
+                "PaddleOCR 识别超时",
+                paddleOcrErrors);
             if (line == null)
             {
                 throw new InvalidOperationException("PaddleOCR 进程没有返回结果。" + PaddleOcrErrorSuffix());
@@ -130,7 +162,11 @@ namespace FH6SkillPointOcr
             rapidOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + imageBase64 + "\"}");
             rapidOcrProcess.StandardInput.Flush();
 
-            string line = rapidOcrProcess.StandardOutput.ReadLine();
+            string line = ReadBridgeLineWithTimeout(
+                rapidOcrProcess,
+                FH6AutomationConstants.Ocr.BridgeRequestTimeoutMs,
+                "RapidOCR 识别超时",
+                rapidOcrErrors);
             if (line == null)
             {
                 throw new InvalidOperationException("RapidOCR 进程没有返回结果。" + RapidOcrErrorSuffix());
@@ -489,7 +525,11 @@ namespace FH6SkillPointOcr
             paddleOcrProcess.Start();
             paddleOcrProcess.BeginErrorReadLine();
 
-            string ready = paddleOcrProcess.StandardOutput.ReadLine();
+            string ready = ReadBridgeLineWithTimeout(
+                paddleOcrProcess,
+                FH6AutomationConstants.Ocr.BridgeInitTimeoutMs,
+                "PaddleOCR 初始化超时",
+                paddleOcrErrors);
             if (ready == null || !ready.Contains("\"ready\""))
             {
                 throw new InvalidOperationException("PaddleOCR 初始化失败。" + PaddleOcrErrorSuffix());
@@ -519,10 +559,43 @@ namespace FH6SkillPointOcr
             rapidOcrProcess.Start();
             rapidOcrProcess.BeginErrorReadLine();
 
-            string ready = rapidOcrProcess.StandardOutput.ReadLine();
+            string ready = ReadBridgeLineWithTimeout(
+                rapidOcrProcess,
+                FH6AutomationConstants.Ocr.BridgeInitTimeoutMs,
+                "RapidOCR 初始化超时",
+                rapidOcrErrors);
             if (ready == null || !ready.Contains("\"ready\""))
             {
                 throw new InvalidOperationException("RapidOCR 初始化失败。" + RapidOcrErrorSuffix());
+            }
+        }
+
+        private string ReadBridgeLineWithTimeout(Process process, int timeoutMs, string context, StringBuilder errors)
+        {
+            System.Threading.Tasks.Task<string> readTask = process.StandardOutput.ReadLineAsync();
+            if (readTask.Wait(timeoutMs))
+            {
+                return readTask.Result;
+            }
+
+            TryKillProcess(process);
+            string stderr;
+            lock (errors)
+            {
+                stderr = errors.ToString();
+            }
+            string suffix = string.IsNullOrWhiteSpace(stderr) ? "" : "\r\nSTDERR:\r\n" + stderr;
+            throw new TimeoutException(context + "，超过 " + (timeoutMs / 1000).ToString(CultureInfo.InvariantCulture) + " 秒。" + suffix);
+        }
+
+        private static void TryKillProcess(Process process)
+        {
+            try
+            {
+                if (process != null && !process.HasExited) process.Kill();
+            }
+            catch
+            {
             }
         }
 
@@ -539,7 +612,26 @@ namespace FH6SkillPointOcr
             psi.CreateNoWindow = true;
             psi.StandardOutputEncoding = Encoding.UTF8;
             psi.StandardErrorEncoding = Encoding.UTF8;
+            psi.EnvironmentVariables["PYTHONUTF8"] = "1";
+            psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+            PrependPythonPath(psi, config.ResolvePath(Path.Combine("runtime", "paddleocr-py")));
+            PrependPythonPath(psi, config.ResolvePath(Path.Combine("runtime", "rapidocr-py")));
             return psi;
+        }
+
+        private static void PrependPythonPath(ProcessStartInfo psi, string path)
+        {
+            if (!Directory.Exists(path)) return;
+
+            string old = psi.EnvironmentVariables["PYTHONPATH"];
+            if (string.IsNullOrWhiteSpace(old))
+            {
+                psi.EnvironmentVariables["PYTHONPATH"] = path;
+            }
+            else if (old.IndexOf(path, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                psi.EnvironmentVariables["PYTHONPATH"] = path + Path.PathSeparator + old;
+            }
         }
 
         private OcrSnapshot ParseOcrJson(string rawJson, Screenshot screenshot, string engineName, string errorSuffix)
@@ -715,16 +807,6 @@ namespace FH6SkillPointOcr
 
             string localRuntime = Path.Combine(config.BaseDir, "runtime", "python", "python.exe");
             if (File.Exists(localRuntime)) return localRuntime;
-
-            string bundled = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".cache",
-                "codex-runtimes",
-                "codex-primary-runtime",
-                "dependencies",
-                "python",
-                "python.exe");
-            if (File.Exists(bundled)) return bundled;
 
             return "python.exe";
         }

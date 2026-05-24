@@ -94,14 +94,29 @@ def find_model_dir(model_name):
     return None
 
 
+def require_model_dir(model_name):
+    path = find_model_dir(model_name)
+    if not path:
+        raise FileNotFoundError(
+            "missing local PaddleOCR model: {}. Please use the full release package and extract all files.".format(model_name)
+        )
+    required = ["inference.pdiparams", "inference.yml"]
+    missing = [name for name in required if not os.path.isfile(os.path.join(path, name))]
+    if missing:
+        raise FileNotFoundError(
+            "incomplete PaddleOCR model {}: missing {} under {}".format(model_name, ", ".join(missing), path)
+        )
+    return path
+
+
 def main():
     engine_kwargs = {
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
         "use_textline_orientation": False,
     }
-    det_model_dir = find_model_dir(DEFAULT_DET_MODEL_NAME)
-    rec_model_dir = find_model_dir(DEFAULT_REC_MODEL_NAME)
+    det_model_dir = require_model_dir(DEFAULT_DET_MODEL_NAME)
+    rec_model_dir = require_model_dir(DEFAULT_REC_MODEL_NAME)
     engine_kwargs.update(
         {
             "text_detection_model_name": DEFAULT_DET_MODEL_NAME,
