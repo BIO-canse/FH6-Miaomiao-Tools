@@ -5,10 +5,11 @@
 ## 下载后怎么用
 
 1. 下载 Release 压缩包并解压。
-2. 按下面的“前置准备”设置好车辆、难度和当前页面。
-3. 运行 `FH6FullAuto.exe`。
-4. 首次运行按提示完成设置，最后按 `Enter` 确认开始。
-5. 确认后程序会等待 10 秒，这段时间切回游戏窗口。等待结束时需要处于“大世界”可操作状态，参考下图。
+2. 压缩包较大，推荐使用 [NanaZip](https://github.com/M2Team/NanaZip) 解压。
+3. 按下面的“前置准备”设置好车辆、难度和当前页面。
+4. 运行 `FH6FullAuto.exe`。
+5. 首次运行按提示完成设置，最后按 `Enter` 确认开始。
+6. 确认后程序会等待 10 秒，这段时间切回游戏窗口。等待结束时需要处于“大世界”可操作状态，参考下图。
 
 ![大世界起始状态示例](assets/overworld-start.png)
 
@@ -110,6 +111,10 @@ Enter 按下 0.1 秒
 ## 不建议手动打开的内部组件
 
 `MinuteWLoop.exe`、`SpaceDownEnterLoop.exe`、`FH6SkillPointOcr.exe`、`FH6VehicleDeleteOcr.exe` 等现在主要作为 `FH6FullAuto.exe` 的内部子流程使用。普通用户直接运行 `FH6FullAuto.exe` 即可。
+
+## 鸣谢
+
+本工具当前默认 OCR 使用 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)，并调用 PP-OCRv5 mobile 检测/识别模型：`PP-OCRv5_mobile_det` 和 `PP-OCRv5_mobile_rec`。感谢 PaddleOCR 项目提供高质量的中文、英文文字识别能力。
 
 ## 重新编译
 
