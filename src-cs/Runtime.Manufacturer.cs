@@ -60,6 +60,7 @@ namespace FH6SkillPointOcr
             }
 
             OcrSnapshot last = null;
+            bool wroteMissCapture = false;
             int attempts = Math.Max(1, config.ManufacturerFindAttempts);
             for (int i = 0; i < attempts; i++)
             {
@@ -67,8 +68,9 @@ namespace FH6SkillPointOcr
                 WaitBeforeUiOcrCapture("before OCR " + cacheLabel);
                 last = ReadScreen();
                 List<OcrMatch> matches = FindConfiguredCjkTextMatches(last, config.ManufacturerText);
+                matches = FilterManufacturerMatches(matches);
                 SetOcrFields(new OcrFieldGroup(cacheLabel, matches));
-                SetOcrSummary("制造商OCR: " + config.ManufacturerText + "=" + matches.Count + "，尝试 " + (i + 1) + "/" + attempts);
+                SetOcrSummary("制造商OCR: " + config.ManufacturerText + "=" + matches.Count + "，尝试 " + (i + 1) + "/" + attempts + "，" + CaptureSummary(last));
                 if (matches.Count > 0)
                 {
                     OcrMatch chosen = ChooseUiTextMatch(matches, config.ManufacturerText);
@@ -81,6 +83,11 @@ namespace FH6SkillPointOcr
                 }
 
                 WriteOcrDump(last, "find-manufacturer-" + SanitizeDebugLabel(cacheLabel));
+                if (!wroteMissCapture)
+                {
+                    WriteOcrSnapshotCapture(last, "manufacturer-miss-" + SanitizeDebugLabel(cacheLabel));
+                    wroteMissCapture = true;
+                }
                 if (i + 1 < attempts)
                 {
                     SetOcrSummary("制造商OCR: 未找到 " + config.ManufacturerText + "，补滚动后重试 " + (i + 2) + "/" + attempts);
@@ -98,6 +105,27 @@ namespace FH6SkillPointOcr
             input.ScrollDown(ticks, config.ScrollTickDelayMs);
             SleepWithFullAutoHotkey(config.SingleScrollDelayMs);
             MoveMouseToScreenBottomRight("idle before manufacturer OCR");
+        }
+
+        private static string CaptureSummary(OcrSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.Screenshot == null || snapshot.Screenshot.Image == null) return "截图=无";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "截图=[{0},{1},{2},{3}]",
+                snapshot.Screenshot.Left,
+                snapshot.Screenshot.Top,
+                snapshot.Screenshot.Image.Width,
+                snapshot.Screenshot.Image.Height);
+        }
+
+        private static List<OcrMatch> FilterManufacturerMatches(List<OcrMatch> matches)
+        {
+            Rectangle virtualScreen = SystemInformation.VirtualScreen;
+            RectangleF overlayPanel = new RectangleF(virtualScreen.Left, virtualScreen.Top, 940, 460);
+            return matches
+                .Where(match => !overlayPanel.IntersectsWith(match.Rect))
+                .ToList();
         }
     }
 }

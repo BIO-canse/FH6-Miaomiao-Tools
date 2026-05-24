@@ -78,6 +78,34 @@ namespace FH6SkillPointOcr
             }
         }
 
+        private void WriteOcrSnapshotCapture(OcrSnapshot snapshot, string reason)
+        {
+            if (snapshot == null || snapshot.Screenshot == null || snapshot.Screenshot.Image == null) return;
+            try
+            {
+                Directory.CreateDirectory(debugDir);
+                string safeReason = Regex.Replace(reason ?? "ocr-capture", @"[^A-Za-z0-9_-]", "_");
+                string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture);
+                string imagePath = Path.Combine(debugDir, "ocr-capture-" + safeReason + "-" + stamp + ".png");
+                string metaPath = Path.Combine(debugDir, "ocr-capture-" + safeReason + "-" + stamp + ".txt");
+                snapshot.Screenshot.Image.Save(imagePath, ImageFormat.Png);
+
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
+                sb.AppendLine("reason=" + reason);
+                sb.AppendLine("status=" + status);
+                sb.AppendLine("next=" + nextAction);
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "capture_origin=[{0},{1}]", snapshot.Screenshot.Left, snapshot.Screenshot.Top));
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "capture_size=[{0},{1}]", snapshot.Screenshot.Image.Width, snapshot.Screenshot.Image.Height));
+                sb.AppendLine("image=" + Path.GetFileName(imagePath));
+                sb.AppendLine("ocr_text=" + DescribeOcrText(snapshot, 160));
+                File.WriteAllText(metaPath, sb.ToString(), Encoding.UTF8);
+            }
+            catch
+            {
+            }
+        }
+
         private void WriteOcrException(Exception ex)
         {
             try

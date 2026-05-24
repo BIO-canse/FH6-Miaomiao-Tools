@@ -20,10 +20,12 @@ namespace FH6SkillPointOcr
     internal sealed class ScreenCapture
     {
         private readonly int monitorIndex;
+        private readonly int currentProcessId;
 
         public ScreenCapture(int monitorIndex)
         {
             this.monitorIndex = monitorIndex;
+            currentProcessId = Process.GetCurrentProcess().Id;
         }
 
         public Screenshot Grab()
@@ -47,11 +49,43 @@ namespace FH6SkillPointOcr
 
         public Rectangle GetBounds()
         {
+            Rectangle foregroundBounds;
+            if (TryGetForegroundScreenBounds(out foregroundBounds)) return foregroundBounds;
+            return GetConfiguredBounds();
+        }
+
+        private Rectangle GetConfiguredBounds()
+        {
             Screen[] screens = Screen.AllScreens;
             int index = Math.Max(0, monitorIndex - 1);
             if (index >= screens.Length) index = 0;
             return screens[index].Bounds;
         }
+
+        private bool TryGetForegroundScreenBounds(out Rectangle bounds)
+        {
+            bounds = Rectangle.Empty;
+            IntPtr hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero || IsIconic(hwnd)) return false;
+
+            uint processId;
+            GetWindowThreadProcessId(hwnd, out processId);
+            if (processId == (uint)currentProcessId) return false;
+
+            Screen screen = Screen.FromHandle(hwnd);
+            if (screen == null || screen.Bounds.Width <= 0 || screen.Bounds.Height <= 0) return false;
+            bounds = screen.Bounds;
+            return true;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     }
 
 }

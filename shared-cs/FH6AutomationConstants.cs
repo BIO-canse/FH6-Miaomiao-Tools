@@ -45,7 +45,7 @@ namespace FH6AutomationShared
             public const int FullAutoSleepSliceMs = 100;
             public const int DebugKeyPollMs = 30;
             public const int ManufacturerRecordPollMs = 20;
-            public const int OverlayHideBeforeCaptureMs = 80;
+            public const int OverlayHideBeforeCaptureMs = 180;
         }
 
         internal static class Ocr

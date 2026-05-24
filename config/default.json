@@ -38,7 +38,7 @@
   "grid_cell_width": 0,
   "grid_cell_height": 0,
   "overlay_enabled": true,
-  "overlay_hide_before_capture_ms": 80,
+  "overlay_hide_before_capture_ms": 180,
   "debug_dir": "debug",
   "virtual_list_path": "state/virtual-vehicle-list.json",
   "fixed_sequence": [

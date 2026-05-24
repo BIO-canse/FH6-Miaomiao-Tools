@@ -21,13 +21,9 @@ namespace FH6SkillPointOcr
     {
         public static RectangleF Capture(int monitorIndex)
         {
-            Screen[] screens = Screen.AllScreens;
-            int index = Math.Max(0, monitorIndex - 1);
-            if (index >= screens.Length) index = 0;
-
             using (ConsoleWindow.Hide())
             {
-                using (CellCalibrationOverlayForm form = new CellCalibrationOverlayForm(screens[index].Bounds))
+                using (CellCalibrationOverlayForm form = new CellCalibrationOverlayForm(SystemInformation.VirtualScreen))
                 {
                     DialogResult result = form.ShowDialog();
                     return result == DialogResult.OK ? form.SelectedRectangle : RectangleF.Empty;

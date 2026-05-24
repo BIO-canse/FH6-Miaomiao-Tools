@@ -54,7 +54,8 @@ namespace FH6SkillPointOcr
         public void HideForCapture(int ms)
         {
             if (enabled && form != null && !form.IsDisposed) form.SafeHide();
-            Thread.Sleep(ms);
+            FlushDesktopComposition();
+            Thread.Sleep(Math.Max(ms, 150));
         }
 
         public void ShowOverlay()
@@ -82,6 +83,20 @@ namespace FH6SkillPointOcr
                 ready.Set();
             }
         }
+
+        private static void FlushDesktopComposition()
+        {
+            try
+            {
+                DwmFlush();
+            }
+            catch
+            {
+            }
+        }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmFlush();
     }
 
     internal sealed class OverlayForm : Form
@@ -154,6 +169,7 @@ namespace FH6SkillPointOcr
                 return;
             }
             Hide();
+            Update();
         }
 
         public void SafeShow()
