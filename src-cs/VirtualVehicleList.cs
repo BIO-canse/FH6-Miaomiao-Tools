@@ -132,11 +132,7 @@ namespace FH6SkillPointOcr
             nextCell = new CellKey(0, 0);
             if (HasPendingValidNew) return false;
 
-            VirtualVehicleCell last = cells.Values
-                .Where(c => StateCode(c) == FH6AutomationConstants.VehicleState.Target)
-                .OrderByDescending(c => OrderIndex(c.Row, c.Col))
-                .FirstOrDefault();
-
+            VirtualVehicleCell last = LastKnownTargetModelCell();
             if (last == null) return false;
 
             lastTarget = new CellKey(last.Row, last.Col);
@@ -144,7 +140,7 @@ namespace FH6SkillPointOcr
 
             VirtualVehicleCell next;
             if (!cells.TryGetValue(nextCell, out next)) return false;
-            return StateCode(next) == FH6AutomationConstants.VehicleState.UnknownOrNonTarget;
+            return IsTerminalBoundaryState(StateCode(next));
         }
 
         public int PreferredEntryOffset(int visibleColumns)
@@ -594,15 +590,15 @@ namespace FH6SkillPointOcr
             nextCell = new CellKey(0, 0);
             if (HasPendingDeleteVehicle) return false;
 
-            VirtualVehicleCell last = cells.Values
-                .OrderByDescending(c => OrderIndex(c.Row, c.Col))
-                .FirstOrDefault();
-
+            VirtualVehicleCell last = LastKnownTargetModelCell();
             if (last == null) return false;
 
             lastTarget = new CellKey(last.Row, last.Col);
             nextCell = NextCell(lastTarget);
-            return StateCode(last) == FH6AutomationConstants.VehicleState.UnknownOrNonTarget;
+
+            VirtualVehicleCell next;
+            if (!cells.TryGetValue(nextCell, out next)) return false;
+            return IsTerminalBoundaryState(StateCode(next));
         }
 
         public void MarkProcessed(CellKey localCell)
@@ -762,42 +758,51 @@ namespace FH6SkillPointOcr
         {
             boundary = new CellKey(0, 0);
             if (visibleColumns <= 0) return false;
-
-            for (int col = 0; col < visibleColumns; col++)
-            {
-                for (int row = 0; row < rows; row++)
-                {
-                    CellKey local = new CellKey(row, col);
-                    CellKey global = ToGlobal(local);
-                    if (ShouldSkipPlannerCell(global)) continue;
-
-                    VirtualVehicleCell cell;
-                    if (!cells.TryGetValue(global, out cell)) continue;
-                    if (StateCode(cell) != FH6AutomationConstants.VehicleState.OtherManufacturerOrUnknown) continue;
-
-                    boundary = global;
-                    return true;
-                }
-            }
-
-            return false;
+            if (!TryGetFirstKnownBoundaryZero(out boundary)) return false;
+            return boundary.Col >= CurrentOffset && boundary.Col < CurrentOffset + visibleColumns;
         }
 
         private bool TryGetFirstKnownBoundaryZero(out CellKey boundary)
         {
             boundary = new CellKey(0, 0);
-            VirtualVehicleCell first = cells.Values
+            VirtualVehicleCell lastTarget = LastKnownTargetModelCell();
+            if (lastTarget == null) return false;
+
+            CellKey next = NextCell(new CellKey(lastTarget.Row, lastTarget.Col));
+            if (ShouldSkipPlannerCell(next)) return false;
+
+            VirtualVehicleCell nextCell;
+            if (!cells.TryGetValue(next, out nextCell)) return false;
+            if (!IsTerminalBoundaryState(StateCode(nextCell))) return false;
+
+            boundary = next;
+            return true;
+        }
+
+        private VirtualVehicleCell LastKnownTargetModelCell()
+        {
+            return cells.Values
                 .Where(c =>
                 {
                     CellKey global = new CellKey(c.Row, c.Col);
-                    return !ShouldSkipPlannerCell(global) && StateCode(c) == FH6AutomationConstants.VehicleState.OtherManufacturerOrUnknown;
+                    return !ShouldSkipPlannerCell(global) && IsTargetModelState(StateCode(c));
                 })
-                .OrderBy(c => OrderIndex(c.Row, c.Col))
+                .OrderByDescending(c => OrderIndex(c.Row, c.Col))
                 .FirstOrDefault();
+        }
 
-            if (first == null) return false;
-            boundary = new CellKey(first.Row, first.Col);
-            return true;
+        private bool IsTargetModelState(int state)
+        {
+            return state == FH6AutomationConstants.VehicleState.Target ||
+                   state == FH6AutomationConstants.VehicleState.ValidNew ||
+                   state == FH6AutomationConstants.VehicleState.Deletable ||
+                   state == FH6AutomationConstants.VehicleState.Drive;
+        }
+
+        private bool IsTerminalBoundaryState(int state)
+        {
+            return state == FH6AutomationConstants.VehicleState.OtherManufacturerOrUnknown ||
+                   state == FH6AutomationConstants.VehicleState.UnknownOrNonTarget;
         }
 
         private void EnsureReservedFirstCell(string reason)

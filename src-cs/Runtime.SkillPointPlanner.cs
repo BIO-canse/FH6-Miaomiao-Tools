@@ -77,8 +77,8 @@ namespace FH6SkillPointOcr
             if (VisibleHasOtherManufacturerOrUnknown())
             {
                 return SkillPointSearchDecision.StopWithReset(
-                    "当前页已经出现状态 0",
-                    "当前页已经出现非斯巴鲁或未确认制造商格子，当前可见目标段已处理完，后面不会再有可点技术点车辆。");
+                    "当前页已经出现目标车型完成边界",
+                    "当前页已确认目标车型区间末尾后面是 0 或 1，后面不会再有可点技术点车辆。");
             }
 
             CellKey knownTarget;
@@ -98,18 +98,18 @@ namespace FH6SkillPointOcr
                 }
             }
 
-            if (subaruListBoundaryReached)
-            {
-                return SkillPointSearchDecision.StopWithReset(
-                    subaruListBoundaryReason,
-                    subaruListBoundaryReason + "，没有剩余可点技术点的斯巴鲁车辆。");
-            }
-
             if (IsCompletionBoundaryReached())
             {
                 return SkillPointSearchDecision.StopWithReset(
                     "没有剩余待点技术点的目标车",
-                    "没有状态 3，且最后一个 2 的下一个格子已确认是 1。");
+                    "没有状态 3，且目标车型区间末尾的下一个格子已确认是 0 或 1。");
+            }
+
+            if (subaruListBoundaryReached)
+            {
+                return SkillPointSearchDecision.Scroll(
+                    1,
+                    subaruListBoundaryReason + "，但还没有形成目标车型完成边界，继续滚动确认。");
             }
 
             int skip;

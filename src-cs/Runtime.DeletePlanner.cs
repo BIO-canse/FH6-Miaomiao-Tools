@@ -82,8 +82,8 @@ namespace FH6SkillPointOcr
             if (VisibleHasOtherManufacturerOrUnknown())
             {
                 return DeleteSearchDecision.Stop(
-                    "当前页已经出现状态 0",
-                    "当前页已经出现非斯巴鲁或未确认制造商格子，当前可见目标段已处理完，后面不会再有可删车辆。");
+                    "当前页已经出现删车完成边界",
+                    "当前页已确认目标车型区间末尾后面是 0 或 1，后面不会再有可删车辆。");
             }
 
             CellKey knownTarget;
@@ -103,18 +103,18 @@ namespace FH6SkillPointOcr
                 }
             }
 
-            if (subaruListBoundaryReached)
-            {
-                return DeleteSearchDecision.Stop(
-                    subaruListBoundaryReason,
-                    subaruListBoundaryReason + "，没有剩余可删的斯巴鲁车辆。");
-            }
-
             if (IsDeleteCompletionBoundaryReached())
             {
                 return DeleteSearchDecision.Stop(
                     "没有剩余状态 2 可删车辆",
-                    "没有状态 2，且列表尾部已确认是非目标车。");
+                    "没有状态 2/4 可删车辆，且目标车型区间末尾的下一个格子已确认是 0 或 1。");
+            }
+
+            if (subaruListBoundaryReached)
+            {
+                return DeleteSearchDecision.Scroll(
+                    1,
+                    subaruListBoundaryReason + "，但还没有形成删车完成边界，继续滚动确认。");
             }
 
             int skip;

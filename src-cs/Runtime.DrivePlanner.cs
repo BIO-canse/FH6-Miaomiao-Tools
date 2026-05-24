@@ -74,7 +74,7 @@ namespace FH6SkillPointOcr
 
             if (VisibleHasOtherManufacturerOrUnknown())
             {
-                return DriveSearchDecision.UseDefault("当前页已经出现状态 0，当前可见目标段已处理完");
+                return DriveSearchDecision.UseDefault("当前页已经出现目标车型完成边界，当前可见目标段已处理完");
             }
 
             CellKey knownTarget;
