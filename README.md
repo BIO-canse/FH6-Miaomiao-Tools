@@ -114,7 +114,7 @@ Enter 按下 0.1 秒
 
 ## 鸣谢
 
-本工具当前默认 OCR 使用 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)，并调用 PP-OCRv5 mobile 检测/识别模型：`PP-OCRv5_mobile_det` 和 `PP-OCRv5_mobile_rec`。感谢 PaddleOCR 项目提供高质量的中文、英文文字识别能力。
+本工具当前默认 OCR 使用 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv5 mobile 流程。它内部包含文本检测和文本识别两个组件，但对本工具来说就是一个 OCR 后端。感谢 PaddleOCR 项目提供高质量的中文、英文文字识别能力。
 
 ## 重新编译
 
