@@ -65,6 +65,21 @@ namespace FH6SkillPointOcr
     {
         private static int Main(string[] args)
         {
+            FH6FailureLog.InstallGlobalHandlers("FH6EmergencyStopWatcher");
+            try
+            {
+                return Run(args);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[ERROR] " + ex.Message);
+                FH6FailureLog.Write("FH6EmergencyStopWatcher", ex);
+                return 1;
+            }
+        }
+
+        private static int Run(string[] args)
+        {
             int ownerPid = ParseOwnerPid(args);
             List<string> roots = ParseRoots(args);
             if (roots.Count == 0) roots.Add(AppDomain.CurrentDomain.BaseDirectory);

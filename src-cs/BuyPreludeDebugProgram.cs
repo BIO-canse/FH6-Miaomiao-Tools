@@ -17,6 +17,7 @@ namespace FH6SkillPointOcr
         private static int Main(string[] args)
         {
             EnableDpiAwareness();
+            FH6FailureLog.InstallGlobalHandlers("FH6BuyPreludeStepDebug");
 
             try
             {
@@ -91,6 +92,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[ERROR] " + ex.Message);
+                FH6FailureLog.Write("FH6BuyPreludeStepDebug", ex);
                 return 1;
             }
         }

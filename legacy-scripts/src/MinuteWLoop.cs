@@ -26,7 +26,23 @@ internal static class MinuteWLoop
     private static bool TrackSkillPoints;
     private static bool HandoffStart;
 
-    private static void Main(string[] args)
+    private static int Main(string[] args)
+    {
+        FH6FailureLog.InstallGlobalHandlers("MinuteWLoop");
+        try
+        {
+            Run(args);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[ERROR] " + ex.Message);
+            FH6FailureLog.Write("MinuteWLoop", ex);
+            return 1;
+        }
+    }
+
+    private static void Run(string[] args)
     {
         SafeStopFile = ParseSafeStopFile(args);
         SkillPointsStateFile = ParseArg(args, "--skill-points-state-file");
@@ -82,45 +98,56 @@ internal static class MinuteWLoop
 
     private static void RunTimedActionLoop()
     {
-        while (!StopRequested)
+        try
         {
-            ReleaseW();
-            TapKey(KeyEnter);
-            Console.WriteLine("{0:HH:mm:ss} 已按 Enter", DateTime.Now);
-            ScheduleWPressAfterEnter();
-
-            if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.SkillPoints.MinuteLoopEnterToXWaitMs)))
+            while (!StopRequested)
             {
-                break;
-            }
+                ReleaseW();
+                TapKey(KeyEnter);
+                Console.WriteLine("{0:HH:mm:ss} 已按 Enter", DateTime.Now);
+                ScheduleWPressAfterEnter();
 
-            ReleaseW();
-            Console.WriteLine("{0:HH:mm:ss} W 已松开", DateTime.Now);
-            TapKey(KeyX);
-            Console.WriteLine("{0:HH:mm:ss} 已按 X", DateTime.Now);
+                if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.SkillPoints.MinuteLoopEnterToXWaitMs)))
+                {
+                    break;
+                }
 
-            if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.SkillPoints.MinuteLoopAfterXWaitMs)))
-            {
-                break;
-            }
+                ReleaseW();
+                Console.WriteLine("{0:HH:mm:ss} W 已松开", DateTime.Now);
+                TapKey(KeyX);
+                Console.WriteLine("{0:HH:mm:ss} 已按 X", DateTime.Now);
 
-            ReleaseW();
-            TapKey(KeyEnter);
-            Console.WriteLine("{0:HH:mm:ss} 已按 Enter", DateTime.Now);
+                if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.SkillPoints.MinuteLoopAfterXWaitMs)))
+                {
+                    break;
+                }
 
-            if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TenSecondsMs)))
-            {
-                break;
-            }
+                ReleaseW();
+                TapKey(KeyEnter);
+                Console.WriteLine("{0:HH:mm:ss} 已按 Enter", DateTime.Now);
 
-            AddSkillPointsForCompletedLoop();
-            if (SafeStopRequested)
-            {
-                StopRequested = true;
-                break;
+                if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TenSecondsMs)))
+                {
+                    break;
+                }
+
+                AddSkillPointsForCompletedLoop();
+                if (SafeStopRequested)
+                {
+                    StopRequested = true;
+                    break;
+                }
             }
         }
-        StopRequested = true;
+        catch (Exception ex)
+        {
+            FH6FailureLog.Write("MinuteWLoop.RunTimedActionLoop", ex);
+            throw;
+        }
+        finally
+        {
+            StopRequested = true;
+        }
     }
 
     private static bool WaitOrExit(TimeSpan duration)
@@ -261,6 +288,7 @@ internal static class MinuteWLoop
         catch (Exception ex)
         {
             Console.WriteLine("技术点计数写入失败：{0}", ex.Message);
+            FH6FailureLog.Write("MinuteWLoop.WriteSkillPointsState", ex);
         }
     }
 
@@ -290,6 +318,7 @@ internal static class MinuteWLoop
         catch (Exception ex)
         {
             Console.WriteLine("技术点事件日志写入失败：{0}", ex.Message);
+            FH6FailureLog.Write("MinuteWLoop.AppendSkillPointEvent", ex);
         }
     }
 

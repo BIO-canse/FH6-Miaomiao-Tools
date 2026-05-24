@@ -128,6 +128,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[UI_CACHE] 读取失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.LoadSharedUiClickCache", ex);
             }
         }
 
@@ -142,6 +143,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[UI_CACHE] 清空失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.ClearSharedUiClickCache", ex);
             }
         }
 
@@ -176,6 +178,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[UI_CACHE] 写入失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.PersistSharedUiClickCache", ex);
             }
         }
 

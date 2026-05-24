@@ -289,6 +289,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[FULL_AUTO_SKILL_POINTS] 写入失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.PersistFullAutoSkillPoints", ex);
             }
         }
 
@@ -326,6 +327,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[FULL_AUTO_SKILL_POINTS] 读取失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.LoadFullAutoSkillPoints", ex);
                 return false;
             }
         }

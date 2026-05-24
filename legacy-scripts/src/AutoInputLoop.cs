@@ -12,7 +12,23 @@ internal static class Program
     private const ushort KeyX = FH6AutomationConstants.Keys.X;
     private static readonly object InputLock = new object();
 
-    private static void Main()
+    private static int Main()
+    {
+        FH6FailureLog.InstallGlobalHandlers("AutoInputLoop");
+        try
+        {
+            Run();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[ERROR] " + ex.Message);
+            FH6FailureLog.Write("AutoInputLoop", ex);
+            return 1;
+        }
+    }
+
+    private static void Run()
     {
         Console.Title = "AutoInputLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");

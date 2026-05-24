@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using FH6AutomationShared;
 
 namespace FH6SkillPointOcr
 {
@@ -80,6 +81,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[OVERLAY] 叠加层启动失败：" + ex.Message);
+                FH6FailureLog.Write("Overlay.RunThread", ex);
                 ready.Set();
             }
         }

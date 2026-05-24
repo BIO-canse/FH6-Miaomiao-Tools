@@ -14,7 +14,23 @@ internal static class SpaceDownEnterLoop
     private static volatile bool StopRequested;
     private static string SafeStopFile;
 
-    private static void Main(string[] args)
+    private static int Main(string[] args)
+    {
+        FH6FailureLog.InstallGlobalHandlers("SpaceDownEnterLoop");
+        try
+        {
+            Run(args);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[ERROR] " + ex.Message);
+            FH6FailureLog.Write("SpaceDownEnterLoop", ex);
+            return 1;
+        }
+    }
+
+    private static void Run(string[] args)
     {
         int rounds = 0;
         int startupDelayMs = FH6AutomationConstants.Timing.StartupDelayMs;

@@ -24,16 +24,17 @@ namespace FH6SkillPointOcr
         private static int Main(string[] args)
         {
             EnableDpiAwareness();
-
-            CliOptions options = CliOptions.Parse(args);
-            if (options.ShowHelp)
-            {
-                Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--handoff] [--skill-points n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
-                return 0;
-            }
+            FH6FailureLog.InstallGlobalHandlers("FH6SkillPointOcr.Program");
 
             try
             {
+                CliOptions options = CliOptions.Parse(args);
+                if (options.ShowHelp)
+                {
+                    Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--handoff] [--skill-points n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
+                    return 0;
+                }
+
                 Config config = Config.Load(options.ConfigPath);
                 EmergencyStopWatcherLauncher.Start(config.BaseDir);
                 if (options.NoOverlay)
@@ -78,7 +79,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[ERROR] " + ex.Message);
-                WriteErrorLog(ex);
+                FH6FailureLog.Write("FH6SkillPointOcr.Program", ex);
                 return 1;
             }
         }
@@ -148,28 +149,6 @@ namespace FH6SkillPointOcr
                 if (choice == "2") return RunMode.Debug;
                 if (choice == "3") return RunMode.ResetSettings;
                 Console.WriteLine("输入无效，请输入 1、2 或 3。");
-            }
-        }
-
-        private static void WriteErrorLog(Exception ex)
-        {
-            try
-            {
-                string exeDir = AppDomain.CurrentDomain.BaseDirectory;
-                string baseDir = exeDir;
-                DirectoryInfo parent = Directory.GetParent(exeDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                if (parent != null && string.Equals(Path.GetFileName(exeDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)), "bin", StringComparison.OrdinalIgnoreCase))
-                {
-                    baseDir = parent.FullName;
-                }
-
-                string debugDir = Path.Combine(baseDir, "debug");
-                Directory.CreateDirectory(debugDir);
-                string body = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "\r\n" + ex + "\r\n";
-                File.WriteAllText(Path.Combine(debugDir, "last-error.txt"), body, Encoding.UTF8);
-            }
-            catch
-            {
             }
         }
 

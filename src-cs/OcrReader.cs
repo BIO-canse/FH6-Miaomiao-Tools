@@ -215,8 +215,9 @@ namespace FH6SkillPointOcr
                 Directory.CreateDirectory(debugImageDir);
                 image.Save(Path.Combine(debugImageDir, debugLabel + "-" + suffix + ".png"), ImageFormat.Png);
             }
-            catch
+            catch (Exception ex)
             {
+                FH6FailureLog.Write("OcrReader.SaveDebugImage", ex);
             }
         }
 
@@ -228,8 +229,9 @@ namespace FH6SkillPointOcr
                 Directory.CreateDirectory(debugImageDir);
                 File.WriteAllText(Path.Combine(debugImageDir, debugLabel + "-" + suffix + ".json"), body ?? "", Encoding.UTF8);
             }
-            catch
+            catch (Exception ex)
             {
+                FH6FailureLog.Write("OcrReader.SaveDebugText", ex);
             }
         }
 

@@ -263,6 +263,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[SKILL_POINTS_STATE] 写入失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.PersistSkillPointsState", ex);
             }
         }
 
@@ -287,6 +288,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[SKILL_POINTS_STATE] 计数读取失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.LoadSkillPointCountersFromState", ex);
             }
         }
 
@@ -332,6 +334,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[SKILL_POINTS_EVENT] 写入失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.AppendSkillPointEvent", ex);
             }
         }
     }

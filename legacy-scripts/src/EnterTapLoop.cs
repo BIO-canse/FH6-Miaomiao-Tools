@@ -10,7 +10,23 @@ internal static class EnterTapLoop
     private const ushort KeyEnter = FH6AutomationConstants.Keys.Enter;
     private const ushort KeyUp = FH6AutomationConstants.Keys.Up;
 
-    private static void Main()
+    private static int Main()
+    {
+        FH6FailureLog.InstallGlobalHandlers("EnterTapLoop");
+        try
+        {
+            Run();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[ERROR] " + ex.Message);
+            FH6FailureLog.Write("EnterTapLoop", ex);
+            return 1;
+        }
+    }
+
+    private static void Run()
     {
         Console.Title = "EnterTapLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");

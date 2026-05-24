@@ -265,6 +265,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[DEBUG] 清理调试截图失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.ResetDebugScreenshots", ex);
             }
         }
 
@@ -300,6 +301,7 @@ namespace FH6SkillPointOcr
             catch (Exception ex)
             {
                 Console.WriteLine("[DEBUG] 保存调试截图失败：" + ex.Message);
+                FH6FailureLog.Write("Runtime.SaveDebugCapture", ex);
                 return null;
             }
         }
