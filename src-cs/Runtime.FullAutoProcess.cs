@@ -25,7 +25,7 @@ namespace FH6SkillPointOcr
             psi.CreateNoWindow = true;
             psi.Arguments = arguments;
 
-            FullAutoStageGap("启动 1 分钟刷技术点子程序前预留间隔");
+            FullAutoStageGap("启动刷技术点子程序前预留间隔");
             overlay.HideForCapture(0);
             fullAutoChildProcess = Process.Start(psi);
             overlay.ShowOverlay();
@@ -63,7 +63,7 @@ namespace FH6SkillPointOcr
                 overlay.ShowOverlay();
             }
 
-            FullAutoStageGap("1 分钟刷技术点子程序结束后预留间隔");
+            FullAutoStageGap("刷技术点子程序结束后预留间隔");
         }
 
         private string MinuteLoopProgressSummary(DateTime estimateAnchorUtc)
@@ -78,15 +78,17 @@ namespace FH6SkillPointOcr
             }
 
             DateTime finishAt = DateTime.Now.AddMilliseconds(remainingMs);
-            return string.Format(
+            string summary = string.Format(
                 CultureInfo.InvariantCulture,
-                "刷技术点中；当前技术点 {0}/{1}；还需 {2} 轮，约 {3}，预计 {4} 刷满；每轮 +{5}",
+                "当前技术点 {0}/{1}；还需 {2} 轮，约 {3}，预计 {4} 刷满；每轮 +{5}",
                 remainingSkillPoints,
                 FH6AutomationConstants.SkillPoints.Max,
                 loops,
                 FormatDurationCompact(TimeSpan.FromMilliseconds(remainingMs)),
                 finishAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
                 FH6AutomationConstants.SkillPoints.MinuteLoopGain);
+            minuteLoopSummary = summary;
+            return "刷技术点中；" + summary;
         }
 
         private int RemainingMinuteLoopCount()
@@ -279,6 +281,9 @@ namespace FH6SkillPointOcr
                 root["updated_at"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
                 root["reason"] = reason;
                 root["skill_points"] = Math.Max(0, Math.Min(FH6AutomationConstants.SkillPoints.Max, remainingSkillPoints));
+                root["super_wheelspins"] = superWheelspinCount;
+                root["event_index"] = skillPointEventIndex;
+                root["minute_loop_count"] = minuteLoopCompletedCount;
                 File.WriteAllText(path, new JavaScriptSerializer().Serialize(root), Encoding.UTF8);
             }
             catch (Exception ex)
@@ -304,9 +309,17 @@ namespace FH6SkillPointOcr
                 object value;
                 if (!root.TryGetValue("skill_points", out value)) return false;
 
+                int before = remainingSkillPoints;
                 int loaded = Math.Max(0, Math.Min(FH6AutomationConstants.SkillPoints.Max, Convert.ToInt32(value, CultureInfo.InvariantCulture)));
                 bool changed = loaded != remainingSkillPoints;
                 remainingSkillPoints = loaded;
+                superWheelspinCount = ReadInt(root, "super_wheelspins", superWheelspinCount);
+                skillPointEventIndex = ReadInt(root, "event_index", skillPointEventIndex);
+                minuteLoopCompletedCount = ReadInt(root, "minute_loop_count", minuteLoopCompletedCount);
+                if (changed)
+                {
+                    SetOcrSummary("技术点同步: " + before + " -> " + remainingSkillPoints + "，原因 " + reason);
+                }
                 if (updateStatus) SetStatus("skill points synced", reason + "，当前技术点 " + remainingSkillPoints);
                 return changed;
             }

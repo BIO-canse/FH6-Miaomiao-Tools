@@ -143,9 +143,7 @@ namespace FH6SkillPointOcr
                     bool isDrive = driveCells.Contains(local);
                     bool isTarget = isDrive || targets.Contains(local);
                     bool isManufacturer = manufacturerCells.Contains(local) || isTarget;
-                    string newState = isDrive
-                        ? FH6AutomationConstants.VehicleState.DriveName
-                        : (isTarget ? FH6AutomationConstants.VehicleState.DriveCheckedName : FH6AutomationConstants.VehicleState.None);
+                    string newState = FH6AutomationConstants.VehicleState.None;
 
                     VirtualVehicleCell next = new VirtualVehicleCell();
                     next.Row = row;
@@ -300,17 +298,16 @@ namespace FH6SkillPointOcr
                     bool isDelete = deletable.Contains(local);
                     bool isValidNew = validNew.Contains(local);
                     bool isInvalidNew = invalidNew.Contains(local);
-                    bool isTarget = targets.Contains(local) || isDrive || isDelete || isValidNew;
+                    bool isTarget = targets.Contains(local) || isDelete || isValidNew;
                     bool isManufacturer = manufacturerCells.Contains(local) || isTarget;
                     int performanceScore;
                     if (!performanceScores.TryGetValue(local, out performanceScore)) performanceScore = -1;
 
                     string newState = FH6AutomationConstants.VehicleState.None;
                     if (isValidNew) newState = FH6AutomationConstants.VehicleState.ValidNewName;
-                    else if (isDrive) newState = FH6AutomationConstants.VehicleState.DriveName;
                     else if (isDelete) newState = FH6AutomationConstants.VehicleState.DeletableName;
                     else if (isInvalidNew) newState = FH6AutomationConstants.VehicleState.InvalidNew;
-                    else if (isTarget) newState = FH6AutomationConstants.VehicleState.DriveCheckedName;
+                    else if (isTarget) newState = FH6AutomationConstants.VehicleState.None;
                     else if (blankCells.Contains(local)) newState = FH6AutomationConstants.VehicleState.BlankName;
 
                     VirtualVehicleCell next = new VirtualVehicleCell();

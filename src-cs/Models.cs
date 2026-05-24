@@ -99,6 +99,7 @@ namespace FH6SkillPointOcr
         public RectangleF Rect;
         public string State;
         public bool Chosen;
+        public bool DriveCandidate;
         public CellView(int row, int col, RectangleF rect, string state, bool chosen)
         {
             Row = row;
@@ -109,6 +110,7 @@ namespace FH6SkillPointOcr
             Rect = rect;
             State = state;
             Chosen = chosen;
+            DriveCandidate = false;
         }
     }
 
@@ -146,6 +148,8 @@ namespace FH6SkillPointOcr
         public string Stage = "-";
         public string Status = "-";
         public string NextAction = "-";
+        public string ActionSequence = "-";
+        public string Cycle = "-";
         public int LoopCount;
         public int DebugSteps;
         public string Calibration = "-";
@@ -154,6 +158,8 @@ namespace FH6SkillPointOcr
         public string Ocr = "-";
         public string Target = "-";
         public string SkillPoints = "-";
+        public string SuperWheelspins = "-";
+        public string MinuteLoop = "-";
         public double ElapsedSeconds;
         public int Failures;
     }

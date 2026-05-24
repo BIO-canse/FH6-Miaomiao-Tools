@@ -64,16 +64,20 @@ namespace FH6SkillPointOcr
             CellKey targetGlobal;
             if (vehicleList.TryGetDriveVehicleGlobalTarget(out targetGlobal))
             {
-                return DriveSearchDecision.Select(targetGlobal, "虚拟表内已有状态 5，进入工作分支生成键盘路径");
+                int score;
+                string scoreText = vehicleList.TryGetDriveVehicleScore(targetGlobal, out score)
+                    ? score.ToString(CultureInfo.InvariantCulture)
+                    : "?";
+                return DriveSearchDecision.Select(targetGlobal, "虚拟表内已选出列表最前的 900 分状态 2 指定车型，性能分 " + scoreText + "，生成键盘路径");
             }
 
             if (UseTableOnlyVehicleSearch())
             {
                 if (vehicleList.HasDriveVehicle)
                 {
-                    return DriveSearchDecision.Observe("定表内仍有状态 5，但当前 offset 后方没有状态 5，可能已经滚过目标");
+                    return DriveSearchDecision.Observe("定表内仍有 900 分状态 2 开蓝图候选，但当前 offset 后方没有候选，可能已经滚过目标");
                 }
-                return DriveSearchDecision.Observe("定表虚拟列表内没有状态 5；按规则这里不允许默认退出或默认第一格");
+                return DriveSearchDecision.Observe("定表虚拟列表内没有 900 分状态 2 指定车型；按规则这里不允许默认退出或默认第一格");
             }
 
             if (subaruListBoundaryReached)
@@ -98,22 +102,27 @@ namespace FH6SkillPointOcr
                     skip,
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "当前没有状态 5，跳过已知非 5 区间 {0} 格",
+                        "当前没有开蓝图候选，跳过已知非候选区间 {0} 格",
                         skip));
             }
 
-            return DriveSearchDecision.Scroll(1, "当前可见范围已观察但没有状态 5，向下滚动 1 格继续找");
+            return DriveSearchDecision.Scroll(1, "当前可见范围已观察但没有开蓝图候选，向下滚动 1 格继续找");
         }
 
         private void PrepareDriveTarget(CellKey target, string reason)
         {
             ClearOcrFields();
             SetOcrSummary("虚拟列表: " + reason + "，直接处理，不 OCR");
+            int score;
+            string scoreText = vehicleList.TryGetDriveVehicleScore(target, out score)
+                ? score.ToString(CultureInfo.InvariantCulture)
+                : "?";
             lastTargetSummary = string.Format(
                 CultureInfo.InvariantCulture,
-                "开蓝图车: global_col={0}, row={1}",
+                "开蓝图车: global_col={0}, row={1}, score={2}",
                 target.Col,
-                target.Row);
+                target.Row,
+                scoreText);
             UpdateOverlay(null, null, null, null, VisibleLocalFromGlobal(target));
             Console.WriteLine("[DRIVE_TARGET] planned global row={0} col={1}", target.Row, target.Col);
         }

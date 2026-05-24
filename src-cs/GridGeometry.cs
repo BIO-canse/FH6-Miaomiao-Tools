@@ -21,6 +21,8 @@ namespace FH6SkillPointOcr
     {
         private readonly Config config;
         private readonly Dictionary<CellKey, RectangleF> cells = new Dictionary<CellKey, RectangleF>();
+        private Rectangle lastClientBounds = Rectangle.Empty;
+        private const double NonUniformScaleTolerance = 0.02;
         public int Rows { get { return config.GridRows; } }
         public int CalibrationCount { get; private set; }
         public int CalibrationLimit { get { return 1; } }
@@ -31,6 +33,9 @@ namespace FH6SkillPointOcr
         public double AnchorOriginY { get; private set; }
         public double CellStepX { get; private set; }
         public double CellStepY { get; private set; }
+        public double WindowScaleX { get; private set; }
+        public double WindowScaleY { get; private set; }
+        public bool WindowScaled { get; private set; }
 
         public GridGeometry(Config config)
         {
@@ -41,6 +46,8 @@ namespace FH6SkillPointOcr
                 AnchorOriginY = config.GridCellTop;
                 CellStepX = config.GridCellWidth;
                 CellStepY = config.GridCellHeight;
+                WindowScaleX = 1;
+                WindowScaleY = 1;
                 VisibleColumns = config.VisibleColumns;
                 BuildCells();
                 CalibrationCount = 1;
@@ -74,6 +81,41 @@ namespace FH6SkillPointOcr
                 (int)Math.Floor(top),
                 (int)Math.Ceiling(right),
                 (int)Math.Ceiling(bottom));
+        }
+
+        public void SyncToClientBounds(Rectangle clientBounds)
+        {
+            if (!Locked || !Ready) return;
+            if (!config.WindowBoundCalibration) return;
+            if (clientBounds.Width <= 0 || clientBounds.Height <= 0) return;
+            if (config.CalibrationClientWidth <= 0 || config.CalibrationClientHeight <= 0) return;
+            if (lastClientBounds == clientBounds) return;
+
+            double scaleX = clientBounds.Width / config.CalibrationClientWidth;
+            double scaleY = clientBounds.Height / config.CalibrationClientHeight;
+            double diff = Math.Abs(scaleX - scaleY) / Math.Max(scaleX, scaleY);
+            if (diff > NonUniformScaleTolerance)
+            {
+                throw new InvalidOperationException(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "窗口客户区比例发生非等比变化，无法复用旧虚拟表格。框选时 {0:0}x{1:0}，当前 {2}x{3}，scaleX={4:0.000}, scaleY={5:0.000}。请选择 3 重设设置并重新框选。",
+                    config.CalibrationClientWidth,
+                    config.CalibrationClientHeight,
+                    clientBounds.Width,
+                    clientBounds.Height,
+                    scaleX,
+                    scaleY));
+            }
+
+            AnchorOriginX = clientBounds.Left + (config.GridCellLeft - config.CalibrationClientLeft) * scaleX;
+            AnchorOriginY = clientBounds.Top + (config.GridCellTop - config.CalibrationClientTop) * scaleY;
+            CellStepX = config.GridCellWidth * scaleX;
+            CellStepY = config.GridCellHeight * scaleY;
+            WindowScaleX = scaleX;
+            WindowScaleY = scaleY;
+            WindowScaled = true;
+            lastClientBounds = clientBounds;
+            BuildCells();
         }
 
         public bool TryGetFirstVisibleCellCenter(out Point point)
@@ -124,9 +166,10 @@ namespace FH6SkillPointOcr
                 if (targets.Contains(pair.Key)) state = "state2";
                 if (validNew.Contains(pair.Key)) state = "state3";
                 if (deletable.Contains(pair.Key)) state = "state4";
-                if (drive.Contains(pair.Key)) state = "state5";
                 bool isChosen = chosen.HasValue && pair.Key.Equals(chosen.Value);
-                result.Add(new CellView(pair.Key.Row, pair.Key.Col, pair.Value, state, isChosen));
+                CellView view = new CellView(pair.Key.Row, pair.Key.Col, pair.Value, state, isChosen);
+                view.DriveCandidate = drive.Contains(pair.Key);
+                result.Add(view);
             }
             return result;
         }

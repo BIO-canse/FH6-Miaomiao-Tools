@@ -45,6 +45,7 @@ namespace FH6SkillPointOcr
 
         private OcrSnapshot ReadScreenInternal(int psm, Rectangle region)
         {
+            RefreshWindowBindingAndGrid("before capture");
             overlay.HideForCapture(config.OverlayHideBeforeCaptureMs);
             try
             {
@@ -65,10 +66,25 @@ namespace FH6SkillPointOcr
             }
         }
 
+        private void EnableWindowBindingForAutomation(string reason)
+        {
+            capture.EnableWindowBinding(reason);
+            RefreshWindowBindingAndGrid(reason);
+            SetOcrSummary("窗口绑定: " + capture.BoundWindowSummary);
+        }
+
+        private void RefreshWindowBindingAndGrid(string reason)
+        {
+            if (!capture.WindowBindingEnabled) return;
+            Rectangle bounds = capture.GetBounds();
+            grid.SyncToClientBounds(bounds);
+        }
+
         private void SetStatus(string newStatus, string newNextAction)
         {
             status = newStatus;
             if (newNextAction != null) nextAction = newNextAction;
+            if (LooksLikeActionSequence(newNextAction)) actionSequence = newNextAction;
             Console.WriteLine("[STATE] " + status);
             UpdateOverlay(null, null, null, null);
         }
@@ -179,6 +195,8 @@ namespace FH6SkillPointOcr
             details.Stage = bigStage;
             details.Status = status;
             details.NextAction = nextAction;
+            details.ActionSequence = actionSequence;
+            details.Cycle = CycleSummary();
             details.LoopCount = loopCount;
             details.DebugSteps = debugStepCount;
             details.Calibration = GridCalibrationSummary();
@@ -187,7 +205,9 @@ namespace FH6SkillPointOcr
             details.Ocr = lastOcrSummary;
             details.Target = lastTargetSummary;
             details.SkillPoints = SkillPointSummary();
-            details.ElapsedSeconds = elapsed.Elapsed.TotalSeconds;
+            details.SuperWheelspins = "超级抽奖: " + superWheelspinCount;
+            details.MinuteLoop = minuteLoopSummary;
+            details.ElapsedSeconds = Math.Max(0, (DateTime.Now - startedAtLocal).TotalSeconds);
             details.Failures = failures;
             overlay.Update(details, cells, lastOcrFields);
         }
@@ -195,12 +215,33 @@ namespace FH6SkillPointOcr
         private string SkillPointSummary()
         {
             if (task == AutomationTask.DeleteVehicles) return "删除车辆模式: 4=可删";
-            if (task == AutomationTask.FullAuto) return "全自动总控技术点: " + remainingSkillPoints + " / " + FH6AutomationConstants.SkillPoints.Max + "；Space+V 安全结束";
+            if (task == AutomationTask.FullAuto) return "技术点: " + remainingSkillPoints + " / " + FH6AutomationConstants.SkillPoints.Max;
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "技术点: {0}, 每轮-{1}",
                 remainingSkillPoints,
                 config.SkillPointsPerVehicle);
+        }
+
+        private string CycleSummary()
+        {
+            if (task == AutomationTask.FullAuto)
+            {
+                return "主循环: " + Math.Max(1, fullAutoCycleCount) + "；子流程循环: " + loopCount;
+            }
+            return "循环: " + loopCount;
+        }
+
+        private static bool LooksLikeActionSequence(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            return text.IndexOf("->", StringComparison.Ordinal) >= 0 ||
+                   text.IndexOf(" x", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("Down x", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("Esc", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("Enter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("Backspace", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   text.IndexOf("等待", StringComparison.Ordinal) >= 0;
         }
 
         private string TaskModePrefix()
@@ -212,7 +253,12 @@ namespace FH6SkillPointOcr
 
         private string GridCalibrationSummary()
         {
-            return grid.Locked ? "manual locked" : "missing manual cell";
+            if (!grid.Locked) return "missing manual cell";
+            if (grid.WindowScaled)
+            {
+                return string.Format(CultureInfo.InvariantCulture, "window bound scale=({0:0.000},{1:0.000})", grid.WindowScaleX, grid.WindowScaleY);
+            }
+            return "manual locked";
         }
 
         private string GridSummary()

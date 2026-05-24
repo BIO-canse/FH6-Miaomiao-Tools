@@ -27,6 +27,11 @@ namespace FH6SkillPointOcr
         public double GridCellHeight;
         public bool DpiAwareCoordinates;
         public string CalibrationMode;
+        public bool WindowBoundCalibration;
+        public double CalibrationClientLeft;
+        public double CalibrationClientTop;
+        public double CalibrationClientWidth;
+        public double CalibrationClientHeight;
 
         public static UserSettings LoadOrCreate(Config config)
         {
@@ -43,6 +48,18 @@ namespace FH6SkillPointOcr
                     settings.GridCellTop,
                     settings.GridCellWidth,
                     settings.GridCellHeight);
+                if (settings.WindowBoundCalibration)
+                {
+                    Console.WriteLine("[SETTINGS] 框选时窗口客户区：left={0:0}, top={1:0}, width={2:0}, height={3:0}",
+                        settings.CalibrationClientLeft,
+                        settings.CalibrationClientTop,
+                        settings.CalibrationClientWidth,
+                        settings.CalibrationClientHeight);
+                }
+                else
+                {
+                    Console.WriteLine("[SETTINGS] 旧设置没有窗口客户区基准；可继续按绝对坐标运行，但无法自动等比迁移。");
+                }
                 return settings;
             }
 
@@ -81,6 +98,11 @@ namespace FH6SkillPointOcr
             settings.GridCellTop = GetDouble(json, "grid_cell_top", 0);
             settings.GridCellWidth = GetDouble(json, "grid_cell_width", 0);
             settings.GridCellHeight = GetDouble(json, "grid_cell_height", 0);
+            settings.WindowBoundCalibration = GetBool(json, "window_bound_calibration", false);
+            settings.CalibrationClientLeft = GetDouble(json, "calibration_client_left", 0);
+            settings.CalibrationClientTop = GetDouble(json, "calibration_client_top", 0);
+            settings.CalibrationClientWidth = GetDouble(json, "calibration_client_width", 0);
+            settings.CalibrationClientHeight = GetDouble(json, "calibration_client_height", 0);
             if (!settings.DpiAwareCoordinates)
             {
                 Console.WriteLine("[SETTINGS] 旧设置不是 DPI aware 坐标，截图会偏移，需要重新框选。");
@@ -129,6 +151,26 @@ namespace FH6SkillPointOcr
             settings.GridCellHeight = gridRect.Height / rows;
             settings.DpiAwareCoordinates = true;
             settings.CalibrationMode = "full_grid_v1";
+
+            Point center = new Point(
+                (int)Math.Round(gridRect.Left + gridRect.Width / 2),
+                (int)Math.Round(gridRect.Top + gridRect.Height / 2));
+            WindowBinding binding;
+            if (WindowLocator.TryBindFromPoint(center, Process.GetCurrentProcess().Id, out binding))
+            {
+                settings.WindowBoundCalibration = true;
+                settings.CalibrationClientLeft = binding.ClientBounds.Left;
+                settings.CalibrationClientTop = binding.ClientBounds.Top;
+                settings.CalibrationClientWidth = binding.ClientBounds.Width;
+                settings.CalibrationClientHeight = binding.ClientBounds.Height;
+                Console.WriteLine("[SETTINGS] 已绑定框选区域下方窗口：" + binding.Summary());
+            }
+            else
+            {
+                settings.WindowBoundCalibration = false;
+                Console.WriteLine("[SETTINGS] 未能识别框选区域下方窗口；本设置将按绝对坐标保存，无法自动等比迁移。");
+            }
+
             Save(path, settings);
             Console.WriteLine("[SETTINGS] 已保存 " + path);
             Console.WriteLine("[SETTINGS] 整体区域：left={0:0}, top={1:0}, width={2:0}, height={3:0}", gridRect.Left, gridRect.Top, gridRect.Width, gridRect.Height);
@@ -165,6 +207,11 @@ namespace FH6SkillPointOcr
             json["grid_cell_top"] = Math.Round(settings.GridCellTop, 2);
             json["grid_cell_width"] = Math.Round(settings.GridCellWidth, 2);
             json["grid_cell_height"] = Math.Round(settings.GridCellHeight, 2);
+            json["window_bound_calibration"] = settings.WindowBoundCalibration;
+            json["calibration_client_left"] = Math.Round(settings.CalibrationClientLeft, 2);
+            json["calibration_client_top"] = Math.Round(settings.CalibrationClientTop, 2);
+            json["calibration_client_width"] = Math.Round(settings.CalibrationClientWidth, 2);
+            json["calibration_client_height"] = Math.Round(settings.CalibrationClientHeight, 2);
             string body = new JavaScriptSerializer().Serialize(json);
             File.WriteAllText(path, PrettyJson(body), Encoding.UTF8);
         }
@@ -177,6 +224,11 @@ namespace FH6SkillPointOcr
             config.GridCellTop = settings.GridCellTop;
             config.GridCellWidth = settings.GridCellWidth;
             config.GridCellHeight = settings.GridCellHeight;
+            config.WindowBoundCalibration = settings.WindowBoundCalibration;
+            config.CalibrationClientLeft = settings.CalibrationClientLeft;
+            config.CalibrationClientTop = settings.CalibrationClientTop;
+            config.CalibrationClientWidth = settings.CalibrationClientWidth;
+            config.CalibrationClientHeight = settings.CalibrationClientHeight;
         }
 
         private static int GetInt(Dictionary<string, object> json, string key, int fallback)

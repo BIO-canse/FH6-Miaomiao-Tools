@@ -27,6 +27,7 @@ namespace FH6SkillPointOcr
         private readonly bool handoffStart;
         private readonly bool stepDebug;
         private readonly string skillPointsStateFile;
+        private readonly string skillPointsLogFile;
         private readonly InputController input;
         private readonly ScreenCapture capture;
         private readonly OcrReader ocr;
@@ -36,12 +37,16 @@ namespace FH6SkillPointOcr
         private readonly string debugDir;
         private readonly string debugScreenshotDir;
         private readonly string uiClickCachePath;
-        private readonly Stopwatch elapsed = Stopwatch.StartNew();
+        private readonly DateTime startedAtLocal = DateTime.Now;
         private int failures;
         private int loopCount;
+        private int fullAutoCycleCount;
         private int debugStepCount;
         private int debugScreenshotCounter;
         private int remainingSkillPoints;
+        private int superWheelspinCount;
+        private int skillPointEventIndex;
+        private int minuteLoopCompletedCount;
         private readonly int firstRunSkillPoints;
         private bool deleteSelectionKnown;
         private CellKey deleteSelection = new CellKey(0, 0);
@@ -49,13 +54,15 @@ namespace FH6SkillPointOcr
         private string status = "init";
         private string bigStage = "启动";
         private string nextAction = "等待启动";
+        private string actionSequence = "-";
+        private string minuteLoopSummary = "-";
         private string lastOcrSummary = "OCR: -";
         private string lastTargetSummary = "目标格: -";
         private List<OcrFieldView> lastOcrFields = new List<OcrFieldView>();
         private bool subaruListBoundaryReached;
         private string subaruListBoundaryReason = "";
 
-        public Runtime(Config config, bool dryRun, bool stepDebug, int initialSkillPoints, AutomationTask task, bool useFullManufacturerFlow, VirtualListLoadMode virtualListLoadMode, bool handoffStart, string safeStopFile, string skillPointsStateFile)
+        public Runtime(Config config, bool dryRun, bool stepDebug, int initialSkillPoints, AutomationTask task, bool useFullManufacturerFlow, VirtualListLoadMode virtualListLoadMode, bool handoffStart, string safeStopFile, string skillPointsStateFile, string skillPointsLogFile)
         {
             this.config = config;
             this.task = task;
@@ -71,6 +78,7 @@ namespace FH6SkillPointOcr
             grid = new GridGeometry(config);
             debugDir = config.ResolvePath(config.DebugDir);
             Directory.CreateDirectory(debugDir);
+            this.skillPointsLogFile = ResolveSkillPointsLogFile(skillPointsLogFile);
             debugScreenshotDir = Path.Combine(debugDir, "screenshots");
             uiClickCachePath = Path.Combine(config.BaseDir, "state", FH6AutomationShared.FH6AutomationConstants.Files.UiClickCache);
             LoadSharedUiClickCacheIfAllowed();
@@ -80,6 +88,7 @@ namespace FH6SkillPointOcr
             string virtualListPath = config.ResolvePath(config.VirtualListPath);
             vehicleList = new VirtualVehicleList(config.GridRows, virtualListLog, virtualListPath, virtualListLoadMode);
             overlay = new OverlayRenderer(config.OverlayEnabled);
+            LoadSkillPointCountersFromState();
             PersistSkillPointsState("init");
         }
 
@@ -129,6 +138,7 @@ namespace FH6SkillPointOcr
             {
                 Console.WriteLine("[STARTUP] 衔接启动：跳过启动确认和 10 秒等待。");
                 SetStatus("startup wait skipped", "衔接启动子程序跳过启动确认");
+                EnableWindowBindingForAutomation("handoff startup");
                 return;
             }
 
@@ -137,6 +147,7 @@ namespace FH6SkillPointOcr
                 Console.Write("[STARTUP] 准备工作已完成。调试模式按 Enter 后进入单步流程：");
                 Console.ReadLine();
                 SetStatus("startup wait skipped", "调试模式跳过开局等待");
+                EnableWindowBindingForAutomation("debug startup");
                 return;
             }
 
@@ -144,6 +155,7 @@ namespace FH6SkillPointOcr
             Console.ReadLine();
             DebugGate("startup wait", "等待 10 秒后进入主循环");
             input.SleepMs(config.StartupDelayMs);
+            EnableWindowBindingForAutomation("normal startup after delay");
         }
 
         private void MainLoopOnce()
@@ -221,9 +233,13 @@ namespace FH6SkillPointOcr
 
         private void DeductSkillPointsForCompletedVehicle()
         {
+            int before = remainingSkillPoints;
+            int superBefore = superWheelspinCount;
             remainingSkillPoints = Math.Max(0, remainingSkillPoints - config.SkillPointsPerVehicle);
+            superWheelspinCount++;
+            AppendSkillPointEvent("deduct_completed_vehicle", before, remainingSkillPoints, remainingSkillPoints - before, superBefore, superWheelspinCount);
             PersistSkillPointsState("deduct_completed_vehicle");
-            SetStatus("skill points updated", "本轮完成，剩余技术点 " + remainingSkillPoints);
+            SetStatus("skill points updated", "点完 1 辆车：技术点 " + before + " -> " + remainingSkillPoints + "，超级抽奖 +1，总计 " + superWheelspinCount);
         }
 
         private void PersistSkillPointsState(string reason)
@@ -238,12 +254,84 @@ namespace FH6SkillPointOcr
                 root["updated_at"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
                 root["reason"] = reason;
                 root["skill_points"] = remainingSkillPoints;
+                root["super_wheelspins"] = superWheelspinCount;
+                root["event_index"] = skillPointEventIndex;
+                root["minute_loop_count"] = minuteLoopCompletedCount;
                 string json = new JavaScriptSerializer().Serialize(root);
                 File.WriteAllText(skillPointsStateFile, json, Encoding.UTF8);
             }
             catch (Exception ex)
             {
                 Console.WriteLine("[SKILL_POINTS_STATE] 写入失败：" + ex.Message);
+            }
+        }
+
+        private string ResolveSkillPointsLogFile(string requestedPath)
+        {
+            if (!string.IsNullOrWhiteSpace(requestedPath)) return Path.GetFullPath(requestedPath);
+            string fileName = "skill-points-events-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log";
+            return Path.Combine(debugDir, fileName);
+        }
+
+        private void LoadSkillPointCountersFromState()
+        {
+            if (string.IsNullOrWhiteSpace(skillPointsStateFile) || !File.Exists(skillPointsStateFile)) return;
+            try
+            {
+                Dictionary<string, object> root = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(
+                    File.ReadAllText(skillPointsStateFile, Encoding.UTF8));
+                superWheelspinCount = ReadInt(root, "super_wheelspins", superWheelspinCount);
+                skillPointEventIndex = ReadInt(root, "event_index", skillPointEventIndex);
+                minuteLoopCompletedCount = ReadInt(root, "minute_loop_count", minuteLoopCompletedCount);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[SKILL_POINTS_STATE] 计数读取失败：" + ex.Message);
+            }
+        }
+
+        private static int ReadInt(Dictionary<string, object> root, string key, int fallback)
+        {
+            object value;
+            if (!root.TryGetValue(key, out value) || value == null) return fallback;
+            try
+            {
+                return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return fallback;
+            }
+        }
+
+        private void AppendSkillPointEvent(string reason, int before, int after, int delta, int superBefore, int superAfter)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(skillPointsLogFile)) return;
+                string directory = Path.GetDirectoryName(skillPointsLogFile);
+                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+                skillPointEventIndex++;
+                string line = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0:yyyy-MM-dd HH:mm:ss.fff}\tevent={1}\ttask={2}\tcycle={3}\tloop={4}\treason={5}\tskill={6}->{7}\tdelta={8}\tsuper={9}->{10}",
+                    DateTime.Now,
+                    skillPointEventIndex,
+                    task,
+                    fullAutoCycleCount,
+                    loopCount,
+                    reason,
+                    before,
+                    after,
+                    delta,
+                    superBefore,
+                    superAfter);
+                File.AppendAllText(skillPointsLogFile, line + Environment.NewLine, Encoding.UTF8);
+                Console.WriteLine("[SKILL_POINTS_EVENT] " + line);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[SKILL_POINTS_EVENT] 写入失败：" + ex.Message);
             }
         }
     }

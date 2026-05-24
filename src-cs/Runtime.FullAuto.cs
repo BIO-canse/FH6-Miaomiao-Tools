@@ -9,6 +9,7 @@ namespace FH6SkillPointOcr
     {
         private void RunFullAutoLoop()
         {
+            fullAutoCycleCount = 1;
             SetStage("A. 大世界自动进入车库标准位");
             SetStatus("full auto startup", "大世界自动进入车库标准位");
             EnterGarageStandardPosition();
@@ -24,6 +25,8 @@ namespace FH6SkillPointOcr
                 FindDriveCarAndEnterBlueprint();
                 RunMinuteWLoopUntilSkillPointsFull();
                 RunPostMinuteReturnSequence();
+                SetStatus("full auto cycle completed", "第 " + fullAutoCycleCount + " 轮完成，准备进入下一轮");
+                fullAutoCycleCount++;
                 FullAutoStageGap("返回流程结束，准备进入车库标准位");
                 EnterGarageStandardPosition();
                 FullAutoStageGap("车库标准位已就绪，准备运行自动点技能点");
@@ -57,6 +60,8 @@ namespace FH6SkillPointOcr
             args.Add(remainingSkillPoints.ToString(CultureInfo.InvariantCulture));
             args.Add("--skill-points-state-file");
             args.Add(SkillPointsStatePath());
+            args.Add("--skill-points-log-file");
+            args.Add(skillPointsLogFile);
             RunChildProcess(ResolveBinPath(FH6AutomationConstants.Files.SkillPointExe), args, "skill");
             LoadFullAutoSkillPoints("skill child completed");
         }
@@ -64,7 +69,7 @@ namespace FH6SkillPointOcr
         private void RunFullAutoStartupPreflight()
         {
             ClearSharedUiClickCache("full auto startup");
-            SetOcrSummary("总控启动前置: 第一轮先定表；后续点技能点、删车、找5车直接读写虚拟列表，不再做车辆格 OCR");
+            SetOcrSummary("总控启动前置: 第一轮先定表；后续点技能点、删车、找 900 分状态 2 开蓝图车直接读写虚拟列表，不再做车辆格 OCR");
         }
 
         private void RunDeleteChildHandoff()
@@ -81,25 +86,26 @@ namespace FH6SkillPointOcr
 
         private void PrepareDriveSearchAfterDeleteChild()
         {
-            SetStage("找状态 5 前置复位");
-            SetStatus("drive search handoff", "自动删车结束后 Esc -> 等待 0.5 秒，再进入找自用车流程");
+            SetStage("找开蓝图车辆前置复位");
+            SetStatus("drive search handoff", "自动删车结束后 Esc -> 等待 0.5 秒，再进入找 900 分开蓝图车辆流程");
             input.Tap("ESC");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
         }
 
         private void RunMinuteWLoopUntilSkillPointsFull()
         {
-            SetStage("子程序: 1 分钟刷技术点");
-            SetStatus("minute loop", "启动 1 分钟刷技术点循环，每轮 +" + FH6AutomationConstants.SkillPoints.MinuteLoopGain + "，到 " + FH6AutomationConstants.SkillPoints.Max + " 后安全退出");
+            SetStage("子程序: 刷技术点循环");
+            SetStatus("minute loop", "启动刷技术点循环，每轮 +" + FH6AutomationConstants.SkillPoints.MinuteLoopGain + "，到 " + FH6AutomationConstants.SkillPoints.Max + " 后安全退出");
             string safeStopFile = SafeStopPath(FH6AutomationConstants.Files.MinuteSafeStop);
             DeleteFileIfExists(safeStopFile);
             PersistFullAutoSkillPoints("before_minute_loop");
-            string arguments = "--handoff --safe-stop-file " + QuoteArg(safeStopFile) + " --skill-points-state-file " + QuoteArg(SkillPointsStatePath());
+            string arguments = "--handoff --safe-stop-file " + QuoteArg(safeStopFile) + " --skill-points-state-file " + QuoteArg(SkillPointsStatePath()) + " --skill-points-log-file " + QuoteArg(skillPointsLogFile);
             RunMinuteWLoopProcess(safeStopFile, arguments, true);
         }
 
         private void RunPostMinuteReturnSequence()
         {
+            minuteLoopSummary = "-";
             SetStage("E. 刷技术点结束后的返回流程");
             SetStatus("post minute return", "Down x" + FH6AutomationConstants.Flow.PostMinuteDownCount + ", Enter, 1 秒, Enter, 20 秒");
             MoveMouseToScreenBottomRight("idle before post minute return");
@@ -112,7 +118,7 @@ namespace FH6SkillPointOcr
 
         private void FindDriveCarAndEnterBlueprint()
         {
-            SetStage("找状态 5 开蓝图车辆");
+            SetStage("找 900 分开蓝图车辆");
             if (!grid.Locked) BuildGrid();
             ReopenSubaruListFromVehicleListForDriveSearch();
             ResetDeleteSelectionToFirstCell();
@@ -150,7 +156,7 @@ namespace FH6SkillPointOcr
         {
             remainingSkillPoints = FH6AutomationConstants.SkillPoints.Max - FH6AutomationConstants.SkillPoints.MinuteLoopGain;
             PersistFullAutoSkillPoints("blueprint_cycle_test_before_minute_loop_once");
-            SetStatus("minute loop test", "运行 1 分钟刷技术点脚本 1 轮，计数从 " + remainingSkillPoints + " 到 " + FH6AutomationConstants.SkillPoints.Max);
+            SetStatus("minute loop test", "运行刷技术点脚本 1 轮，计数从 " + remainingSkillPoints + " 到 " + FH6AutomationConstants.SkillPoints.Max);
             RunMinuteWLoopUntilSkillPointsFull();
         }
 
@@ -242,7 +248,7 @@ namespace FH6SkillPointOcr
 
         private CellKey FindDriveVehicleCell()
         {
-            SetStatus("find drive vehicle", UseTableOnlyVehicleSearch() ? "按定表虚拟列表规划下一步：选择、滚动或默认第一格，不 OCR" : "按虚拟表规划下一步：选择、滚动、OCR 或默认第一格");
+            SetStatus("find drive vehicle", UseTableOnlyVehicleSearch() ? "按定表虚拟列表选择列表最前的 900 分状态 2 指定车型；没有候选则报错，不 OCR" : "按虚拟表规划下一步：选择、滚动、OCR 或默认第一格");
             OcrSnapshot last = null;
             for (int i = 0; i < config.MaxFindNewScrolls; i++)
             {
@@ -270,7 +276,7 @@ namespace FH6SkillPointOcr
                     FailTableOnlyVehicleSearch("drive", decision.Reason);
                 }
 
-                DebugGate("find drive vehicle", "OCR 车型和 900，第 " + (i + 1) + " 次：" + decision.Reason);
+                DebugGate("find drive vehicle", "OCR 车型和三位数性能分，第 " + (i + 1) + " 次：" + decision.Reason);
                 last = ReadVehicleGridScreen();
                 RecordVisibleDriveGridFromOcr(last, i);
             }
@@ -285,7 +291,7 @@ namespace FH6SkillPointOcr
                 ResetToSubaruListStartForDriveSearch();
             }
 
-            SetOcrSummary(reason + "，没有找到状态 5，默认第一列第一行就是可用车辆");
+            SetOcrSummary(reason + "，没有找到开蓝图候选，默认第一列第一行就是可用车辆");
             lastTargetSummary = "开蓝图车: 默认 col=0, row=0";
             UpdateOverlay(null, null, null, null, new CellKey(0, 0));
             return new CellKey(0, 0);
@@ -304,8 +310,8 @@ namespace FH6SkillPointOcr
             VehicleGridObservation observation = BuildVehicleGridObservation(snapshot, scrollIndex);
             ApplyVehicleGridObservation(observation);
             CellKey? chosen = LeftTopCell(observation.DriveCells);
-            SetOcrSummary(FullObservationSummary(observation, ", 找5滚动=" + scrollIndex));
-            lastTargetSummary = chosen.HasValue ? string.Format("开蓝图车: col={0}, row={1}", chosen.Value.Col, chosen.Value.Row) : "开蓝图车: 未找到状态 5";
+            SetOcrSummary(FullObservationSummary(observation, ", 找开蓝图车滚动=" + scrollIndex));
+            lastTargetSummary = chosen.HasValue ? string.Format("开蓝图车: col={0}, row={1}", chosen.Value.Col, chosen.Value.Row) : "开蓝图车: 未找到候选";
             UpdateOverlay(observation.TargetCells, observation.ValidNewCells, observation.InvalidNewCells, observation.DeletableCells, observation.DriveCells, chosen);
             if (!chosen.HasValue) WriteOcrDump(snapshot, "drive-current");
             return chosen;

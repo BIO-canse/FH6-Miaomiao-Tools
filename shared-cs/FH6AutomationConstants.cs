@@ -102,7 +102,9 @@ namespace FH6AutomationShared
             public const int Max = 999;
             public const int PerVehicle = 32;
             public const int MinuteLoopGain = 10;
-            public const int MinuteLoopEstimatedLoopMs = 71300;
+            public const int MinuteLoopEnterToXWaitMs = 37000;
+            public const int MinuteLoopAfterXWaitMs = Timing.OneSecondMs;
+            public const int MinuteLoopEstimatedLoopMs = 48300;
         }
 
         internal static class VehicleState

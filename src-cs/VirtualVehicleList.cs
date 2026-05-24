@@ -151,7 +151,11 @@ namespace FH6SkillPointOcr
 
         public bool HasDriveVehicle
         {
-            get { return cells.Values.Any(c => c.NewState == FH6AutomationConstants.VehicleState.DriveName && IsBeforeKnownBoundary(new CellKey(c.Row, c.Col))); }
+            get
+            {
+                CellKey ignored;
+                return TryGetDriveVehicleGlobalTarget(out ignored);
+            }
         }
 
         public int CountValidNewVehicles()
@@ -207,7 +211,7 @@ namespace FH6SkillPointOcr
                 .Where(c =>
                 {
                     CellKey global = new CellKey(c.Row, c.Col);
-                    return c.NewState == FH6AutomationConstants.VehicleState.DriveName &&
+                    return IsDriveCandidateCell(c) &&
                         !ShouldSkipPlannerCell(global) &&
                         IsBeforeKnownBoundary(global);
                 })
@@ -216,6 +220,16 @@ namespace FH6SkillPointOcr
 
             if (pending == null) return false;
             globalCell = new CellKey(pending.Row, pending.Col);
+            return true;
+        }
+
+        public bool TryGetDriveVehicleScore(CellKey globalCell, out int score)
+        {
+            score = -1;
+            VirtualVehicleCell cell;
+            if (!cells.TryGetValue(globalCell, out cell)) return false;
+            if (!IsDriveCandidateCell(cell)) return false;
+            score = cell.PerformanceScore;
             return true;
         }
 
@@ -336,22 +350,24 @@ namespace FH6SkillPointOcr
             localCell = new CellKey(0, 0);
             if (visibleColumns <= 0) return false;
 
-            List<CellKey> localCells = new List<CellKey>();
+            List<VirtualVehicleCell> visibleCandidates = new List<VirtualVehicleCell>();
             foreach (VirtualVehicleCell cell in cells.Values)
             {
-                if (cell.NewState != FH6AutomationConstants.VehicleState.DriveName) continue;
+                if (!IsDriveCandidateCell(cell)) continue;
                 CellKey globalCell = new CellKey(cell.Row, cell.Col);
                 if (!IsBeforeKnownBoundary(globalCell)) continue;
                 int localCol = cell.Col - CurrentOffset;
                 if (localCol < 0 || localCol >= visibleColumns) continue;
-                CellKey local = new CellKey(cell.Row, localCol);
                 if (ShouldSkipPlannerCell(globalCell)) continue;
                 if (!IsBeforeVisibleBoundary(globalCell, visibleColumns)) continue;
-                localCells.Add(local);
+                visibleCandidates.Add(cell);
             }
 
-            if (localCells.Count == 0) return false;
-            localCell = localCells.OrderBy(c => c.Col * FH6AutomationConstants.Ranking.LeftFirstWeight + c.Row).First();
+            if (visibleCandidates.Count == 0) return false;
+            VirtualVehicleCell selected = visibleCandidates
+                .OrderBy(c => c.Col * FH6AutomationConstants.Ranking.LeftFirstWeight + c.Row)
+                .First();
+            localCell = new CellKey(selected.Row, selected.Col - CurrentOffset);
             return true;
         }
 
@@ -453,7 +469,7 @@ namespace FH6SkillPointOcr
             VirtualVehicleCell pending = cells.Values
                 .Where(c =>
                 {
-                    if (c.NewState != FH6AutomationConstants.VehicleState.DriveName || c.Col < CurrentOffset) return false;
+                    if (!IsDriveCandidateCell(c) || c.Col < CurrentOffset) return false;
                     if (!IsBeforeKnownBoundary(new CellKey(c.Row, c.Col))) return false;
                     return !ShouldSkipPlannerCell(new CellKey(c.Row, c.Col));
                 })
@@ -510,11 +526,17 @@ namespace FH6SkillPointOcr
                 if (localCol < 0 || localCol >= visibleColumns) continue;
 
                 CellKey local = new CellKey(cell.Row, localCol);
-                if (cell.IsTarget || cell.NewState == FH6AutomationConstants.VehicleState.ValidNewName || cell.NewState == FH6AutomationConstants.VehicleState.DeletableName || cell.NewState == FH6AutomationConstants.VehicleState.DriveName) targets.Add(local);
+                if (cell.IsTarget || cell.NewState == FH6AutomationConstants.VehicleState.ValidNewName || cell.NewState == FH6AutomationConstants.VehicleState.DeletableName) targets.Add(local);
                 if (cell.NewState == FH6AutomationConstants.VehicleState.ValidNewName) validNew.Add(local);
                 else if (cell.NewState == FH6AutomationConstants.VehicleState.DeletableName) deletable.Add(local);
-                else if (cell.NewState == FH6AutomationConstants.VehicleState.DriveName) drive.Add(local);
                 else if (cell.NewState == FH6AutomationConstants.VehicleState.InvalidNew) invalidNew.Add(local);
+            }
+
+            CellKey driveGlobal;
+            if (TryGetDriveVehicleGlobalTarget(out driveGlobal))
+            {
+                int localCol = driveGlobal.Col - CurrentOffset;
+                if (localCol >= 0 && localCol < visibleColumns) drive.Add(new CellKey(driveGlobal.Row, localCol));
             }
         }
 
@@ -633,7 +655,7 @@ namespace FH6SkillPointOcr
             skip = 0;
             if (visibleColumns <= 0) return false;
             if (cells.Values.Any(c =>
-                c.NewState == FH6AutomationConstants.VehicleState.DriveName &&
+                IsDriveCandidateCell(c) &&
                 c.Col >= CurrentOffset &&
                 IsBeforeKnownBoundary(new CellKey(c.Row, c.Col)))) return false;
 
@@ -805,14 +827,14 @@ namespace FH6SkillPointOcr
             int state2 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.Target);
             int state3 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.ValidNew);
             int state4 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.Deletable);
-            int state5 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.Drive);
+            int driveCandidates = cells.Values.Count(IsDriveCandidateCell);
             int state6 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.Blank);
             int state0 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.OtherManufacturerOrUnknown);
             int invalidNew = cells.Values.Count(c => c.NewState == FH6AutomationConstants.VehicleState.InvalidNew);
             int knownEmpty = CountKnownEmptyColumns();
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "虚拟列表: offset={0}, resume={1}, cells={2}, no3Cols={3}, no3Run={4}, skip={5}, 0={6}, 1={7}, 2={8}, 3={9}, 4={10}, 5={11}, blank={12}, invalid={13}, edits={14}",
+                "虚拟列表: offset={0}, resume={1}, cells={2}, no3Cols={3}, no3Run={4}, skip={5}, 0={6}, 1={7}, 2={8}, 3={9}, 4={10}, 开车候选={11}, blank={12}, invalid={13}, edits={14}",
                 CurrentOffset,
                 hasResumeOffset ? ResumeOffset.ToString(CultureInfo.InvariantCulture) : "-",
                 cells.Count,
@@ -824,7 +846,7 @@ namespace FH6SkillPointOcr
                 state2,
                 state3,
                 state4,
-                state5,
+                driveCandidates,
                 state6,
                 invalidNew,
                 EditCount);
@@ -843,7 +865,6 @@ namespace FH6SkillPointOcr
         private int StateCode(VirtualVehicleCell cell)
         {
             if (cell.NewState == FH6AutomationConstants.VehicleState.BlankName) return FH6AutomationConstants.VehicleState.Blank;
-            if (cell.NewState == FH6AutomationConstants.VehicleState.DriveName) return FH6AutomationConstants.VehicleState.Drive;
             if (cell.NewState == FH6AutomationConstants.VehicleState.DeletableName) return FH6AutomationConstants.VehicleState.Deletable;
             if (cell.NewState == FH6AutomationConstants.VehicleState.ValidNewName) return FH6AutomationConstants.VehicleState.ValidNew;
             if (cell.IsTarget) return FH6AutomationConstants.VehicleState.Target;
@@ -948,8 +969,7 @@ namespace FH6SkillPointOcr
         {
             return state == FH6AutomationConstants.VehicleState.Target ||
                    state == FH6AutomationConstants.VehicleState.ValidNew ||
-                   state == FH6AutomationConstants.VehicleState.Deletable ||
-                   state == FH6AutomationConstants.VehicleState.Drive;
+                   state == FH6AutomationConstants.VehicleState.Deletable;
         }
 
         private bool IsTerminalBoundaryState(int state)
@@ -1138,11 +1158,17 @@ namespace FH6SkillPointOcr
                 if (!cells.TryGetValue(new CellKey(row, col), out cell)) return false;
                 hasAny = true;
                 if (StateCode(cell) == FH6AutomationConstants.VehicleState.OtherManufacturerOrUnknown) return false;
-                if (StateCode(cell) == FH6AutomationConstants.VehicleState.Drive) return false;
-                if (StateCode(cell) == FH6AutomationConstants.VehicleState.Target &&
-                    cell.NewState != FH6AutomationConstants.VehicleState.DriveCheckedName) return false;
+                if (IsDriveCandidateCell(cell)) return false;
             }
             return hasAny;
+        }
+
+        private bool IsDriveCandidateCell(VirtualVehicleCell cell)
+        {
+            if (cell == null) return false;
+            if (!cell.IsTarget) return false;
+            return StateCode(cell) == FH6AutomationConstants.VehicleState.Target &&
+                cell.PerformanceScore == 900;
         }
 
         private bool ShouldIgnoreKnownColumnCell(int row, int col)
@@ -1358,7 +1384,7 @@ namespace FH6SkillPointOcr
                         {
                             cell.IsManufacturer = true;
                             cell.IsTarget = true;
-                            cell.NewState = FH6AutomationConstants.VehicleState.DriveName;
+                            cell.NewState = FH6AutomationConstants.VehicleState.None;
                             if (cell.PerformanceScore < 0) cell.PerformanceScore = 900;
                         }
                         else if (state == FH6AutomationConstants.VehicleState.Blank)
@@ -1375,6 +1401,13 @@ namespace FH6SkillPointOcr
                     if (item.TryGetValue("last_seen_offset", out lastSeenValue)) cell.LastSeenOffset = Convert.ToInt32(lastSeenValue, CultureInfo.InvariantCulture);
                     object seenValue;
                     cell.SeenCount = item.TryGetValue("seen_count", out seenValue) ? Convert.ToInt32(seenValue, CultureInfo.InvariantCulture) : 1;
+                    if (cell.NewState == FH6AutomationConstants.VehicleState.DriveName)
+                    {
+                        cell.IsManufacturer = true;
+                        cell.IsTarget = true;
+                        cell.NewState = FH6AutomationConstants.VehicleState.None;
+                        if (cell.PerformanceScore < 0) cell.PerformanceScore = 900;
+                    }
                     SetCellWithLog(new CellKey(cell.Row, cell.Col), cell, "LOAD_EXISTING_CELL", "snapshot");
                 }
 
@@ -1425,7 +1458,7 @@ namespace FH6SkillPointOcr
                 root["edit_count"] = EditCount;
                 root["last_known_empty_run"] = LastKnownEmptyRun;
                 root["last_suggested_skip"] = LastSuggestedSkip;
-                root["state_codes"] = "-1=空格, 0=其他厂商, 1=斯巴鲁的车, 2=指定型号, 3=指定型号&600&全新, 4=指定型号&600&非全新, 5=指定型号&900";
+                root["state_codes"] = "-1=空格, 0=其他厂商, 1=斯巴鲁的车, 2=指定型号, 3=指定型号&600&全新, 4=指定型号&600&非全新, 5=旧版开蓝图标记(当前不再写入)";
 
                 List<Dictionary<string, object>> items = new List<Dictionary<string, object>>();
                 foreach (VirtualVehicleCell cell in cells.Values.OrderBy(c => c.Col).ThenBy(c => c.Row))

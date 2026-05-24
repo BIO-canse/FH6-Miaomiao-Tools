@@ -219,7 +219,7 @@ namespace FH6SkillPointOcr
                         g.DrawLine(pen, midX, rect.Top, midX, rect.Bottom);
                         g.DrawLine(pen, rect.Left, midY, rect.Right, midY);
                     }
-                    if (cell.State == "state5")
+                    if (cell.DriveCandidate)
                     {
                         float diameter = Math.Max(10, Math.Min(rect.Width, rect.Height) * 0.14f);
                         float circleX = rect.Left + rect.Width / 2 - diameter / 2;
@@ -280,21 +280,21 @@ namespace FH6SkillPointOcr
                 }
             }
 
+            string debugLine = details.DebugSteps > 0 ? "\n调试步数: " + details.DebugSteps.ToString(CultureInfo.InvariantCulture) : "";
+            string minuteLine = string.IsNullOrWhiteSpace(details.MinuteLoop) || details.MinuteLoop == "-" ? "" : "\n刷点进度: " + details.MinuteLoop;
             string text = string.Format(
-                "模式: {0}\n大阶段: {1}\n状态: {2}\n下一步: {3}\n轮数: {4}    调试步数: {5}\n几何: {6}\n格子: {7}\n{8}\n{9}\n{10}\n{11}\n耗时: {12:0.0}s    失败: {13}\nSpace+C 立即退出 / Space+V 安全结束",
+                "模式: {0}\n大阶段: {1}\n当前操作: {2}\n下一步: {3}\n动作串: {4}\n{5}\n{6}    {7}{8}\n虚拟表: {9}\n总耗时: {10}    失败: {11}\nSpace+C 立即退出 / Space+V 安全结束",
                 details.Mode,
                 details.Stage,
                 details.Status,
                 details.NextAction,
-                details.LoopCount,
-                details.DebugSteps,
-                details.Calibration,
-                details.Grid,
-                details.VirtualList,
-                details.Ocr,
-                details.Target,
+                details.ActionSequence,
+                details.Cycle,
                 details.SkillPoints,
-                details.ElapsedSeconds,
+                details.SuperWheelspins,
+                minuteLine + debugLine,
+                details.VirtualList,
+                FormatElapsed(details.ElapsedSeconds),
                 details.Failures);
             using (Brush panelBrush = new SolidBrush(Color.FromArgb(120, 17, 17, 17)))
             using (Pen panelPen = new Pen(Color.FromArgb(0, 140, 255), 2))
@@ -302,8 +302,8 @@ namespace FH6SkillPointOcr
             using (Font font = new Font("Microsoft YaHei UI", 12, FontStyle.Bold))
             {
                 SizeF textSize = g.MeasureString(text, font);
-                float panelWidth = Math.Min(Width - 16, Math.Max(820, textSize.Width + 32));
-                float panelHeight = Math.Min(Height - 16, Math.Max(360, textSize.Height + 32));
+                float panelWidth = Math.Min(Width - 16, Math.Max(900, textSize.Width + 32));
+                float panelHeight = Math.Min(Height - 16, Math.Max(250, textSize.Height + 32));
                 RectangleF panel = new RectangleF(8, 8, panelWidth, panelHeight);
                 g.FillRectangle(panelBrush, panel);
                 g.DrawRectangle(panelPen, panel.X, panel.Y, panel.Width, panel.Height);
@@ -319,6 +319,21 @@ namespace FH6SkillPointOcr
             if (label == "斯巴鲁-选中") return Color.FromArgb(255, 60, 220);
             if (label == "斯巴鲁") return Color.FromArgb(210, 120, 255);
             return Color.FromArgb(0, 220, 255);
+        }
+
+        private static string FormatElapsed(double seconds)
+        {
+            if (seconds < 0) seconds = 0;
+            TimeSpan span = TimeSpan.FromSeconds(seconds);
+            if (span.TotalHours >= 1)
+            {
+                return string.Format(CultureInfo.InvariantCulture, "{0:0}小时{1:00}分{2:00}秒", Math.Floor(span.TotalHours), span.Minutes, span.Seconds);
+            }
+            if (span.TotalMinutes >= 1)
+            {
+                return string.Format(CultureInfo.InvariantCulture, "{0:0}分{1:00}秒", Math.Floor(span.TotalMinutes), span.Seconds);
+            }
+            return string.Format(CultureInfo.InvariantCulture, "{0:0}秒", span.TotalSeconds);
         }
 
         private void MakeClickThrough()

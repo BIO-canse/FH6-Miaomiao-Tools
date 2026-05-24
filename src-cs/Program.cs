@@ -28,7 +28,7 @@ namespace FH6SkillPointOcr
             CliOptions options = CliOptions.Parse(args);
             if (options.ShowHelp)
             {
-                Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--handoff] [--skill-points n] [--skill-points-state-file path] [--safe-stop-file path]");
+                Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--handoff] [--skill-points n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
                 return 0;
             }
 
@@ -60,7 +60,7 @@ namespace FH6SkillPointOcr
                         ? "[STARTUP] 删除车辆：衔接启动，完整复用旧虚拟列表信息。"
                         : "[STARTUP] 删除车辆：独立启动，直接从当前车辆列表 OCR 建表；只有 --handoff 才衔接。");
                 }
-                Runtime runtime = new Runtime(config, options.DryRun, stepDebug, skillPoints, task, useFullManufacturerFlow, listLoadMode, options.ReuseVehicleListState, options.SafeStopFile, options.SkillPointsStateFile);
+                Runtime runtime = new Runtime(config, options.DryRun, stepDebug, skillPoints, task, useFullManufacturerFlow, listLoadMode, options.ReuseVehicleListState, options.SafeStopFile, options.SkillPointsStateFile, options.SkillPointsLogFile);
                 runtime.Run();
                 return 0;
             }

@@ -19,6 +19,7 @@ namespace FH6SkillPointOcr
             observation.ManufacturerMatches = FindManufacturerMatches(snapshot);
             observation.DeleteMarkerMatches = FindDeleteMarkerMatches(snapshot);
             observation.DriveMarkerMatches = FindDriveMarkerMatches(snapshot);
+            observation.PerformanceScoreMatches = FindPerformanceScoreMatches(snapshot);
             observation.PerformanceScores = MapPerformanceScores(snapshot);
 
             observation.TargetCells = MapTargetCells(observation.TargetMatches);
@@ -29,11 +30,6 @@ namespace FH6SkillPointOcr
                 if (observation.TargetCells.Contains(pair.Key) && pair.Value == 600) observation.DeletableCells.Add(pair.Key);
             }
 
-            foreach (KeyValuePair<CellKey, int> pair in observation.PerformanceScores)
-            {
-                if (observation.TargetCells.Contains(pair.Key) && pair.Value == 900) observation.DriveCells.Add(pair.Key);
-            }
-
             foreach (OcrMatch match in observation.NewBadgeMatches)
             {
                 CellKey cell;
@@ -42,6 +38,16 @@ namespace FH6SkillPointOcr
                 bool scoreIs600 = observation.PerformanceScores.TryGetValue(cell, out score) && score == 600;
                 if (observation.TargetCells.Contains(cell) && scoreIs600) observation.ValidNewCells.Add(cell);
                 else observation.InvalidNewCells.Add(cell);
+            }
+
+            foreach (KeyValuePair<CellKey, int> pair in observation.PerformanceScores)
+            {
+                if (!observation.TargetCells.Contains(pair.Key)) continue;
+                if (pair.Value != 900) continue;
+                if (observation.ValidNewCells.Contains(pair.Key)) continue;
+                if (observation.DeletableCells.Contains(pair.Key)) continue;
+                if (observation.InvalidNewCells.Contains(pair.Key)) continue;
+                observation.DriveCells.Add(pair.Key);
             }
 
             HashSet<CellKey> cellsWithAnyText = MapCellsWithAnyText(snapshot);
@@ -60,7 +66,7 @@ namespace FH6SkillPointOcr
                 new OcrFieldGroup("全新", observation.NewBadgeMatches),
                 new OcrFieldGroup("斯巴鲁", observation.ManufacturerMatches),
                 new OcrFieldGroup("600", observation.DeleteMarkerMatches),
-                new OcrFieldGroup("900", observation.DriveMarkerMatches));
+                new OcrFieldGroup("性能分", observation.PerformanceScoreMatches));
             UpdateSubaruListBoundary(observation.ManufacturerMatches);
             vehicleList.ApplyFullObservation(
                 grid.VisibleColumns,
@@ -85,13 +91,13 @@ namespace FH6SkillPointOcr
             return "OCR: IMPREZA=" + observation.TargetMatches.Count
                 + ", 全新=" + observation.NewBadgeMatches.Count
                 + ", 600=" + observation.DeleteMarkerMatches.Count
-                + ", 900=" + observation.DriveMarkerMatches.Count
+                + ", 性能分=" + observation.PerformanceScoreMatches.Count
                 + ", 斯巴鲁=" + observation.ManufacturerMatches.Count
                 + ", 分数=" + observation.PerformanceScores.Count
                 + ", 空格=" + observation.BlankCells.Count
                 + ", 3=" + observation.ValidNewCells.Count
                 + ", 4=" + observation.DeletableCells.Count
-                + ", 5=" + observation.DriveCells.Count
+                + ", 开车候选=" + observation.DriveCells.Count
                 + suffix;
         }
 
@@ -114,6 +120,20 @@ namespace FH6SkillPointOcr
                 {
                     result[cell] = score;
                 }
+            }
+
+            return result;
+        }
+
+        private List<OcrMatch> FindPerformanceScoreMatches(OcrSnapshot snapshot)
+        {
+            List<OcrMatch> result = new List<OcrMatch>();
+            if (snapshot == null || snapshot.Words == null) return result;
+
+            foreach (OcrMatch match in snapshot.Words)
+            {
+                int score;
+                if (TryParsePerformanceScore(match.Text, out score)) result.Add(match);
             }
 
             return result;

@@ -12,6 +12,7 @@ namespace FH6SkillPointOcr
         public List<OcrMatch> ManufacturerMatches = new List<OcrMatch>();
         public List<OcrMatch> DeleteMarkerMatches = new List<OcrMatch>();
         public List<OcrMatch> DriveMarkerMatches = new List<OcrMatch>();
+        public List<OcrMatch> PerformanceScoreMatches = new List<OcrMatch>();
 
         public HashSet<CellKey> TargetCells = new HashSet<CellKey>();
         public HashSet<CellKey> ValidNewCells = new HashSet<CellKey>();

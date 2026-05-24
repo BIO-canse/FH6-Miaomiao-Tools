@@ -18,7 +18,11 @@ internal static class MinuteWLoop
     private static volatile bool SafeStopRequested;
     private static string SafeStopFile;
     private static string SkillPointsStateFile;
+    private static string SkillPointsLogFile;
     private static int SkillPoints;
+    private static int SuperWheelspins;
+    private static int EventIndex;
+    private static int MinuteLoopCount;
     private static bool TrackSkillPoints;
     private static bool HandoffStart;
 
@@ -26,24 +30,28 @@ internal static class MinuteWLoop
     {
         SafeStopFile = ParseSafeStopFile(args);
         SkillPointsStateFile = ParseArg(args, "--skill-points-state-file");
+        SkillPointsLogFile = ParseArg(args, "--skill-points-log-file");
         HandoffStart = HasFlag(args, "--handoff");
         TrackSkillPoints = !string.IsNullOrWhiteSpace(SkillPointsStateFile);
         if (TrackSkillPoints)
         {
-            SkillPoints = ReadSkillPointsState(SkillPointsStateFile, 0);
+            ReadSkillPointsState(SkillPointsStateFile, 0);
             WriteSkillPointsState("minute_loop_start");
+            AppendSkillPointEvent("minute_loop_start", SkillPoints, SkillPoints, 0, SuperWheelspins, SuperWheelspins);
         }
 
         Console.Title = "MinuteWLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");
         Console.WriteLine(HandoffStart ? "衔接启动：跳过开局 10 秒等待。" : "启动后先等待 10 秒。");
-        Console.WriteLine("主循环：确保 W 松开，按 Enter，1 秒后按住 W，等待 1 分钟，松开 W，按 X，等待 1 秒，按 Enter，等待 10 秒。");
+        Console.WriteLine("主循环：确保 W 松开，按 Enter，1 秒后按住 W，Enter 后等待 37 秒，松开 W，按 X，等待 1 秒，按 Enter，等待 10 秒。");
         Console.WriteLine("W 不会在 Enter 前按下，避免菜单选项被 W 移动。");
         if (TrackSkillPoints)
         {
             Console.WriteLine("内部技术点计数：当前 {0}，每轮 +{1}，到 {2} 后安全停止。", SkillPoints, FH6AutomationConstants.SkillPoints.MinuteLoopGain, FH6AutomationConstants.SkillPoints.Max);
         }
-        Console.WriteLine("按 Space+C 立即退出。外部安全退出会跑完当前 1 分钟循环后退出。请在第一次 10 秒等待内切到目标窗口。");
+        Console.WriteLine(HandoffStart
+            ? "按 Space+C 立即退出。外部安全退出会跑完当前刷技术点循环后退出。衔接启动由主程序负责切回目标窗口。"
+            : "按 Space+C 立即退出。外部安全退出会跑完当前刷技术点循环后退出。请在第一次 10 秒等待内切到目标窗口。");
 
         if (TrackSkillPoints && SkillPoints >= FH6AutomationConstants.SkillPoints.Max)
         {
@@ -81,7 +89,7 @@ internal static class MinuteWLoop
             Console.WriteLine("{0:HH:mm:ss} 已按 Enter", DateTime.Now);
             ScheduleWPressAfterEnter();
 
-            if (!WaitOrImmediateExit(TimeSpan.FromMinutes(1)))
+            if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.SkillPoints.MinuteLoopEnterToXWaitMs)))
             {
                 break;
             }
@@ -91,7 +99,7 @@ internal static class MinuteWLoop
             TapKey(KeyX);
             Console.WriteLine("{0:HH:mm:ss} 已按 X", DateTime.Now);
 
-            if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.OneSecondMs)))
+            if (!WaitOrImmediateExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.SkillPoints.MinuteLoopAfterXWaitMs)))
             {
                 break;
             }
@@ -191,6 +199,8 @@ internal static class MinuteWLoop
         if (!TrackSkillPoints) return;
         int before = SkillPoints;
         SkillPoints = Math.Min(FH6AutomationConstants.SkillPoints.Max, SkillPoints + FH6AutomationConstants.SkillPoints.MinuteLoopGain);
+        MinuteLoopCount++;
+        AppendSkillPointEvent("minute_loop_completed", before, SkillPoints, SkillPoints - before, SuperWheelspins, SuperWheelspins);
         WriteSkillPointsState("minute_loop_completed");
         Console.WriteLine("{0:HH:mm:ss} 技术点计数 {1} -> {2}", DateTime.Now, before, SkillPoints);
         if (SkillPoints >= FH6AutomationConstants.SkillPoints.Max)
@@ -201,22 +211,33 @@ internal static class MinuteWLoop
         }
     }
 
-    private static int ReadSkillPointsState(string path, int fallback)
+    private static void ReadSkillPointsState(string path, int fallback)
     {
         try
         {
-            if (!File.Exists(path)) return fallback;
+            if (!File.Exists(path))
+            {
+                SkillPoints = fallback;
+                return;
+            }
             string body = File.ReadAllText(path);
-            Match match = Regex.Match(body, "\"skill_points\"\\s*:\\s*(\\d+)");
-            if (!match.Success) return fallback;
-            int value;
-            if (!int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out value)) return fallback;
-            return Math.Max(0, Math.Min(FH6AutomationConstants.SkillPoints.Max, value));
+            SkillPoints = Math.Max(0, Math.Min(FH6AutomationConstants.SkillPoints.Max, ReadIntField(body, "skill_points", fallback)));
+            SuperWheelspins = Math.Max(0, ReadIntField(body, "super_wheelspins", SuperWheelspins));
+            EventIndex = Math.Max(0, ReadIntField(body, "event_index", EventIndex));
+            MinuteLoopCount = Math.Max(0, ReadIntField(body, "minute_loop_count", MinuteLoopCount));
         }
         catch
         {
-            return fallback;
+            SkillPoints = fallback;
         }
+    }
+
+    private static int ReadIntField(string body, string name, int fallback)
+    {
+        Match match = Regex.Match(body, "\"" + Regex.Escape(name) + "\"\\s*:\\s*(-?\\d+)");
+        if (!match.Success) return fallback;
+        int value;
+        return int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ? value : fallback;
     }
 
     private static void WriteSkillPointsState(string reason)
@@ -230,13 +251,45 @@ internal static class MinuteWLoop
                 + "\"schema\":\"fh6_skill_points_state.v1\","
                 + "\"updated_at\":\"" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + "\","
                 + "\"reason\":\"" + reason + "\","
-                + "\"skill_points\":" + SkillPoints.ToString(CultureInfo.InvariantCulture)
+                + "\"skill_points\":" + SkillPoints.ToString(CultureInfo.InvariantCulture) + ","
+                + "\"super_wheelspins\":" + SuperWheelspins.ToString(CultureInfo.InvariantCulture) + ","
+                + "\"event_index\":" + EventIndex.ToString(CultureInfo.InvariantCulture) + ","
+                + "\"minute_loop_count\":" + MinuteLoopCount.ToString(CultureInfo.InvariantCulture)
                 + "}";
             File.WriteAllText(SkillPointsStateFile, body);
         }
         catch (Exception ex)
         {
             Console.WriteLine("技术点计数写入失败：{0}", ex.Message);
+        }
+    }
+
+    private static void AppendSkillPointEvent(string reason, int before, int after, int delta, int superBefore, int superAfter)
+    {
+        if (string.IsNullOrWhiteSpace(SkillPointsLogFile)) return;
+        try
+        {
+            string directory = Path.GetDirectoryName(SkillPointsLogFile);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            EventIndex++;
+            string line = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0:yyyy-MM-dd HH:mm:ss.fff}\tevent={1}\ttask=MinuteWLoop\tcycle=0\tloop={2}\treason={3}\tskill={4}->{5}\tdelta={6}\tsuper={7}->{8}",
+                DateTime.Now,
+                EventIndex,
+                MinuteLoopCount,
+                reason,
+                before,
+                after,
+                delta,
+                superBefore,
+                superAfter);
+            File.AppendAllText(SkillPointsLogFile, line + Environment.NewLine);
+            Console.WriteLine("{0:HH:mm:ss} 技术点事件：{1} {2}->{3} ({4:+#;-#;0})", DateTime.Now, reason, before, after, delta);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("技术点事件日志写入失败：{0}", ex.Message);
         }
     }
 

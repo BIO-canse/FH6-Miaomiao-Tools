@@ -21,6 +21,8 @@ namespace FH6SkillPointOcr
     {
         private readonly int monitorIndex;
         private readonly int currentProcessId;
+        private bool windowBindingEnabled;
+        private WindowBinding boundWindow;
 
         public ScreenCapture(int monitorIndex)
         {
@@ -49,9 +51,42 @@ namespace FH6SkillPointOcr
 
         public Rectangle GetBounds()
         {
-            Rectangle foregroundBounds;
-            if (TryGetForegroundScreenBounds(out foregroundBounds)) return foregroundBounds;
+            Rectangle windowBounds;
+            if (TryGetBoundWindowBounds(out windowBounds)) return windowBounds;
             return GetConfiguredBounds();
+        }
+
+        public void EnableWindowBinding(string reason)
+        {
+            windowBindingEnabled = true;
+            Rectangle ignored;
+            TryGetBoundWindowBounds(out ignored);
+            if (boundWindow != null)
+            {
+                Console.WriteLine("[WINDOW_BIND] " + reason + " -> " + boundWindow.Summary());
+            }
+            else
+            {
+                Console.WriteLine("[WINDOW_BIND] " + reason + " -> 未能绑定前台窗口，暂时回退到配置显示器。");
+            }
+        }
+
+        public bool IsWindowBound
+        {
+            get { return boundWindow != null && WindowLocator.TryRefresh(boundWindow); }
+        }
+
+        public bool WindowBindingEnabled
+        {
+            get { return windowBindingEnabled; }
+        }
+
+        public string BoundWindowSummary
+        {
+            get
+            {
+                return IsWindowBound ? boundWindow.Summary() : "未绑定";
+            }
         }
 
         private Rectangle GetConfiguredBounds()
@@ -62,30 +97,24 @@ namespace FH6SkillPointOcr
             return screens[index].Bounds;
         }
 
-        private bool TryGetForegroundScreenBounds(out Rectangle bounds)
+        private bool TryGetBoundWindowBounds(out Rectangle bounds)
         {
             bounds = Rectangle.Empty;
-            IntPtr hwnd = GetForegroundWindow();
-            if (hwnd == IntPtr.Zero || IsIconic(hwnd)) return false;
+            if (boundWindow != null && WindowLocator.TryRefresh(boundWindow))
+            {
+                bounds = boundWindow.ClientBounds;
+                return true;
+            }
 
-            uint processId;
-            GetWindowThreadProcessId(hwnd, out processId);
-            if (processId == (uint)currentProcessId) return false;
+            boundWindow = null;
+            if (!windowBindingEnabled) return false;
 
-            Screen screen = Screen.FromHandle(hwnd);
-            if (screen == null || screen.Bounds.Width <= 0 || screen.Bounds.Height <= 0) return false;
-            bounds = screen.Bounds;
+            WindowBinding binding;
+            if (!WindowLocator.TryBindForeground(currentProcessId, out binding)) return false;
+            boundWindow = binding;
+            bounds = binding.ClientBounds;
             return true;
         }
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        private static extern bool IsIconic(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     }
 
 }

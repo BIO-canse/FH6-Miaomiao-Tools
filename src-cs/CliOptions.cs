@@ -28,6 +28,7 @@ namespace FH6SkillPointOcr
         public bool ReuseVehicleListState;
         public string SafeStopFile;
         public string SkillPointsStateFile;
+        public string SkillPointsLogFile;
         public int? SkillPoints;
 
         public static CliOptions Parse(string[] args)
@@ -87,6 +88,10 @@ namespace FH6SkillPointOcr
                 else if (arg == "--skill-points-state-file" && i + 1 < args.Length)
                 {
                     options.SkillPointsStateFile = args[++i];
+                }
+                else if (arg == "--skill-points-log-file" && i + 1 < args.Length)
+                {
+                    options.SkillPointsLogFile = args[++i];
                 }
                 else if (arg == "--skill-points" && i + 1 < args.Length)
                 {

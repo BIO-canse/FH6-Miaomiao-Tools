@@ -241,7 +241,8 @@ namespace FH6SkillPointOcr
                 AppendMatches(sb, "new_badge_matches", observation.NewBadgeMatches);
                 AppendMatches(sb, "manufacturer_matches", observation.ManufacturerMatches);
                 AppendMatches(sb, "raw_600_matches_overlay_only", observation.DeleteMarkerMatches);
-                AppendMatches(sb, "raw_900_matches_overlay_only", observation.DriveMarkerMatches);
+                AppendMatches(sb, "performance_score_matches", observation.PerformanceScoreMatches);
+                AppendMatches(sb, "legacy_raw_900_matches", observation.DriveMarkerMatches);
                 if (snapshot != null) AppendSection(sb, "raw_ocr_response", snapshot.RawResponse, 120000);
 
                 string text = sb.ToString();

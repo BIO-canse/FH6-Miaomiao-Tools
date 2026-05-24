@@ -60,6 +60,11 @@ namespace FH6SkillPointOcr
         public double GridCellTop;
         public double GridCellWidth;
         public double GridCellHeight;
+        public bool WindowBoundCalibration;
+        public double CalibrationClientLeft;
+        public double CalibrationClientTop;
+        public double CalibrationClientWidth;
+        public double CalibrationClientHeight;
         public bool OverlayEnabled;
         public int OverlayHideBeforeCaptureMs;
         public string DebugDir;
@@ -111,6 +116,11 @@ namespace FH6SkillPointOcr
             cfg.GridCellTop = GetDouble(json, "grid_cell_top", 0);
             cfg.GridCellWidth = GetDouble(json, "grid_cell_width", 0);
             cfg.GridCellHeight = GetDouble(json, "grid_cell_height", 0);
+            cfg.WindowBoundCalibration = GetBool(json, "window_bound_calibration", false);
+            cfg.CalibrationClientLeft = GetDouble(json, "calibration_client_left", 0);
+            cfg.CalibrationClientTop = GetDouble(json, "calibration_client_top", 0);
+            cfg.CalibrationClientWidth = GetDouble(json, "calibration_client_width", 0);
+            cfg.CalibrationClientHeight = GetDouble(json, "calibration_client_height", 0);
             cfg.OverlayEnabled = GetBool(json, "overlay_enabled", true);
             cfg.OverlayHideBeforeCaptureMs = GetInt(json, "overlay_hide_before_capture_ms", FH6AutomationConstants.Timing.OverlayHideBeforeCaptureMs);
             cfg.DebugDir = GetString(json, "debug_dir", FH6AutomationConstants.Files.DebugDir);

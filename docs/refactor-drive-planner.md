@@ -1,8 +1,8 @@
-# 全自动找状态 5 重构文档
+# 全自动开蓝图车辆选择重构文档
 
 ## 范围
 
-本轮只重构 `FH6FullAuto.exe` 中“找状态 5 开蓝图车辆”的车辆列表查找流程。
+本轮只重构 `FH6FullAuto.exe` 中“选择开蓝图车辆”的车辆列表查找流程。
 
 暂不重构：
 
@@ -11,101 +11,63 @@
 - 创意中心和蓝图选择流程。
 - 自动点技术点、自动删车子程序。
 
-## 当前问题
+## 当前规则
 
-`FindDriveVehicleCell()` 里直接混合了这些判断：
+用户修正规则：“5的规则改一下，现在不要直接写5（避免覆盖掉），而是选择性能分（一定是三位数）最高的指定类型车辆”。
 
-- 当前可见是否已有状态 `5`。
-- 后方是否已知状态 `5`。
-- 是否到达状态 `0` 边界。
-- 是否应该跳过已知非 `5` 区间。
-- 是否 OCR。
-- 没找到时是否复位并默认第一格。
+进一步确认：“900现在就是正常的2车”。
 
-这些判断和自动点、删车一样分散，容易出现重复 OCR、滚动过头、默认第一格触发时机不清楚的问题。
+最新修正规则：“不要选择最高性能分得了，只选择列表排序最前的性能分为900的2。”
+
+落实规则：
+
+- `900` 仍然只是 `PerformanceScore`，不能把格子写成状态 `5`。
+- 指定车型本身仍然是状态 `2`，如果带有效 `全新` 是状态 `3`，如果是可删车是状态 `4`。
+- 不再因为性能分是 `900` 把格子写成状态 `5`。
+- 开蓝图时只选择状态 `2` 且 `PerformanceScore == 900` 的指定车型。
+- 如果有多个 `900` 分状态 `2`，按列表顺序选择最前的一个，也就是先列后行的最小位置。
+- 状态 `3`、状态 `4`、非 `900` 分目标车都不能作为开蓝图车辆。
+- 如果虚拟表里没有 `900` 分状态 `2` 指定车型，程序报错停止，避免默认上错车。
 
 ## 稳定对象
 
-- `VirtualVehicleList`：读取删车后的虚拟表，并在 OCR 后继续更新状态。
-- `BuildVehicleGridObservation()` / `ApplyVehicleGridObservation()`：一次 OCR 统一识别 `IMPREZA 22B-STI`、`全新`、`斯巴鲁`、`600`、`900` 并写表。
-- `DrivePlanner`：找状态 `5` 阶段唯一的下一步决策者。
-- 执行器：沿用 `ScrollVehicleListDown()`、`RecordVisibleDriveGridFromOcr()`、`UseDefaultDriveVehicleAfterSearchEnds()`、`MoveDeleteSelectionToCell()`。
+- `VirtualVehicleList`：读取删车后的虚拟表，保存 `IsTarget`、`NewState`、`PerformanceScore` 和当前 offset。
+- `BuildVehicleGridObservation()` / `ApplyVehicleGridObservation()`：定表 OCR 时统一识别 `IMPREZA 22B-STI`、`全新`、`斯巴鲁` 和三位数性能分，并写入虚拟表。
+- `DrivePlanner`：开蓝图车辆选择阶段唯一的下一步决策者。
+- 执行器：沿用键盘移动逻辑，根据目标全局列和当前 offset 生成 `Left` / `Right` / `Down` 路径。
 
 ## 动作集合
 
 ```text
-Select(localCell)
+Select(globalCell)
 Scroll(ticks, reason)
 Observe(reason)
-UseDefault(reason)
+UseDefault(reason) 旧兼容路径，表驱动模式不应走到这里
 ```
 
 含义：
 
-- `Select`：当前可见范围已有状态 `5`，直接选中。
-- `Scroll`：虚拟表已经能判断应该滚到更有价值的位置。
-- `Observe`：当前页还缺可信状态，需要 OCR 当前车辆列表区域并写表。
-- `UseDefault`：确认前方没有状态 `5`，复位到斯巴鲁列表起点后默认第一列第一行。
-
-## 状态 5 定义
-
-状态 `5` 表示：
-
-```text
-目标车 IMPREZA 22B-STI
-并且同一格 OCR 到 900
-```
-
-只有经过统一 OCR 确认没有 `900` 的目标车格，才可以当作“已知非 5”参与跳过。继承自动点技术点或删车留下的普通状态 `2`，不能直接证明不是状态 `5`。
+- `Select`：虚拟表已经有列表最前的 `900` 分状态 `2` 候选，直接生成键盘路径。
+- `Scroll`：兼容非表驱动路径时使用。
+- `Observe`：兼容非表驱动路径时 OCR 当前车辆列表区域并写表。
+- `UseDefault`：旧兼容路径；全自动定表模式中没有候选时应报错，不默认第一格。
 
 ## 决策顺序
 
 ```text
-if 当前可见范围有状态 5:
-    Select(最左最上的状态 5)
+if 虚拟表内存在 StateCode == 2 且 PerformanceScore == 900 的指定车型:
+    Select(列表顺序最前的格子)
 
-else if 当前可见范围没有状态 5，但后方已知有状态 5:
-    Scroll(滚到能看到该状态 5)
-
-else if 上一次 OCR 已确认没有可处理斯巴鲁:
-    UseDefault(斯巴鲁列表结束)
-
-else if 当前可见范围已知出现状态 0:
-    UseDefault(已经到其它制造商或未知区)
-
-else if 当前可见范围还有未知格子:
-    Observe(当前页未完整观察)
-
-else if 当前没有状态 5，且从当前 offset 开始有连续已知非 5 列:
-    Scroll(连续已知非 5 列数量 - 最左侧保留的 1 列已知格子)
+else if 当前是全自动定表模式:
+    Observe/Fail(定表内没有 900 分状态 2 开蓝图候选，停止排查)
 
 else:
-    Scroll(1)
+    走旧兼容 OCR/滚动路径
 ```
-
-## 默认第一格规则
-
-如果 `UseDefault` 发生在 offset `0`，直接返回本页第一列第一行。
-
-如果 `UseDefault` 发生在 offset 大于 `0`，先执行既有复位流程：
-
-```text
-Esc
-等待 0.5 秒
-Enter
-等待 0.5 秒
-Backspace
-等待 0.5 秒
-向下滚动 10 格
-OCR 点击斯巴鲁
-```
-
-然后默认第一列第一行。
 
 ## 检查点
 
-- 读取删车后的旧表，如果可见范围已经有状态 `5`，不能 OCR，直接选。
-- 后方已知状态 `5` 时，滚动到能看到它，而不是一格一格扫。
-- 当前页未知时先 OCR，不能直接跳过。
-- 当前页已知状态 `0` 或没有可处理 `斯巴鲁` 时，不再滚动，走默认第一格。
-- 只有经过 900 OCR 确认的目标车格才参与“已知非 5”跳过。
+- `900` 车在虚拟表里必须仍显示为状态 `2`，不能显示或保存为状态 `5`。
+- 状态 `3` / `4` 不能被性能分覆盖。
+- 开蓝图目标通过 `StateCode == 2 && PerformanceScore == 900` 选择，而不是通过 `NewState=drive` 或最高性能分选择。
+- 叠加层小圆只是“当前准备选择的开蓝图目标”高亮，不代表状态码 `5`。
