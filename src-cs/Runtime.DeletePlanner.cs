@@ -65,42 +65,24 @@ namespace FH6SkillPointOcr
         {
             if (deleteSelectionKnown && vehicleList.IsVisibleDeleteVehicle(deleteSelection, grid.VisibleColumns))
             {
-                return DeleteSearchDecision.Select(deleteSelection, "当前选中格仍是可删车辆");
+                return DeleteSearchDecision.Select(vehicleList.ToGlobal(deleteSelection), "当前选中格仍是可删车辆");
             }
 
-            CellKey target;
-            if (vehicleList.TryGetVisibleDeleteVehicle(grid.VisibleColumns, out target))
+            CellKey targetGlobal;
+            if (vehicleList.TryGetDeleteVehicleGlobalTarget(out targetGlobal))
             {
-                return DeleteSearchDecision.Select(target, "当前可见范围已有可删车辆");
+                return DeleteSearchDecision.Select(targetGlobal, "虚拟表内已有状态 4，进入工作分支生成键盘路径");
             }
 
-            if (!vehicleList.IsVisibleSearchRangeObserved(grid.VisibleColumns))
+            if (UseTableOnlyVehicleSearch())
             {
-                return DeleteSearchDecision.Observe("当前可见目标段还有未知格子");
-            }
-
-            if (VisibleHasOtherManufacturerOrUnknown())
-            {
-                return DeleteSearchDecision.Stop(
-                    "当前页已经出现删车完成边界",
-                    "当前页已确认目标车型区间末尾后面是 0 或 1，后面不会再有可删车辆。");
-            }
-
-            CellKey knownTarget;
-            int targetOffset;
-            if (vehicleList.TryGetDeleteVehicleTarget(grid.VisibleColumns, out knownTarget, out targetOffset))
-            {
-                int delta = targetOffset - vehicleList.CurrentOffset;
-                if (delta > 0)
+                if (vehicleList.HasPendingDeleteVehicle)
                 {
-                    return DeleteSearchDecision.Scroll(
-                        delta,
-                        string.Format(
-                            CultureInfo.InvariantCulture,
-                            "虚拟表后方已有可删车辆，滚动 {0} 格到 offset={1}",
-                            delta,
-                            targetOffset));
+                    return DeleteSearchDecision.Observe("定表内仍有状态 4，但当前 offset 后方没有状态 4，可能已经滚过目标");
                 }
+                return DeleteSearchDecision.Stop(
+                    "定表虚拟列表内没有状态 4",
+                    "定表虚拟列表内没有状态 4，可删车辆已处理完。");
             }
 
             if (IsDeleteCompletionBoundaryReached())
@@ -115,6 +97,11 @@ namespace FH6SkillPointOcr
                 return DeleteSearchDecision.Scroll(
                     1,
                     subaruListBoundaryReason + "，但还没有形成删车完成边界，继续滚动确认。");
+            }
+
+            if (!vehicleList.IsVisibleSearchRangeObserved(grid.VisibleColumns))
+            {
+                return DeleteSearchDecision.Observe("当前可见目标段还有未知格子");
             }
 
             int skip;
@@ -137,12 +124,11 @@ namespace FH6SkillPointOcr
             SetOcrSummary("虚拟列表: " + reason + "，直接处理，不 OCR");
             lastTargetSummary = string.Format(
                 CultureInfo.InvariantCulture,
-                "可删格: col={0}, row={1}",
+                "可删格: global_col={0}, row={1}",
                 target.Col,
                 target.Row);
-            RememberVehicleResumeOffset();
-            UpdateOverlay(null, null, null, null, target);
-            Console.WriteLine("[DELETE_TARGET] planned row={0} col={1}", target.Row, target.Col);
+            UpdateOverlay(null, null, null, null, VisibleLocalFromGlobal(target));
+            Console.WriteLine("[DELETE_TARGET] planned global row={0} col={1}", target.Row, target.Col);
         }
 
         private void CompleteDeleteSearch(string reason, string message)

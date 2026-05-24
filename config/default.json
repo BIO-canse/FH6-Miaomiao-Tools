@@ -23,7 +23,7 @@
   "creative_center_text": "创意中心",
   "latest_hot_text": "最新最热",
   "my_favorites_text": "我的收藏",
-  "manufacturer_scroll_ticks": 100,
+  "manufacturer_scroll_ticks": 10,
   "manufacturer_find_attempts": 12,
   "manufacturer_retry_scroll_ticks": 20,
   "scroll_tick_delay_ms": 20,

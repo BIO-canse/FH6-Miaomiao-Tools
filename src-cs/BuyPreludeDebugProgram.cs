@@ -29,6 +29,7 @@ namespace FH6SkillPointOcr
                 }
 
                 Config config = Config.Load(configPath);
+                EmergencyStopWatcherLauncher.Start(config.BaseDir);
                 InputController input = new InputController(config.TapMs, config.RepeatIntervalMs, dryRun, null);
                 ScreenCapture capture = new ScreenCapture(config.MonitorIndex);
                 string debugDir = Path.Combine(config.ResolvePath(config.DebugDir), "buy-prelude-step");
@@ -84,6 +85,7 @@ namespace FH6SkillPointOcr
             catch (StopRequestedException)
             {
                 Console.WriteLine("[EXIT] Space+C");
+                EmergencyStop.KillAutomationProcesses(AppDomain.CurrentDomain.BaseDirectory);
                 return 0;
             }
             catch (Exception ex)

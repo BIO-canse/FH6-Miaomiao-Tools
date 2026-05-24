@@ -50,14 +50,17 @@ namespace FH6SkillPointOcr
 
         private void FindSubaruManufacturerByOcr(string cacheLabel, bool moveToIdleAfterClick)
         {
-            SetStatus("select Subaru manufacturer", "鼠标移到屏幕中心，滚动到底，OCR 点击斯巴鲁，进入后停到车辆列表右侧");
-            SetOcrSummary("制造商定位: 滚动到底后 OCR 查找斯巴鲁");
+            SetStatus("select Subaru manufacturer", "先向下滚动 " + config.ManufacturerScrollTicks + " 格，再优先复用 " + cacheLabel + " 坐标；没有缓存才 OCR");
+            SetOcrSummary("制造商定位: 向下滚动 " + config.ManufacturerScrollTicks + " 格 -> 检查缓存 -> 缓存缺失才 OCR");
             string cacheKey = UiClickCacheKey("text", cacheLabel, config.ManufacturerText);
-            ScrollManufacturerList(config.ManufacturerScrollTicks, "manufacturer list scroll focus");
+            ScrollManufacturerList(config.ManufacturerScrollTicks, "manufacturer list scroll focus", "滚动后检查 " + cacheLabel + " 坐标缓存");
+            SetStatus("manufacturer cache check", "滚动已完成，检查 " + cacheLabel + " 坐标缓存");
             if (TryClickCachedUiPoint(cacheKey, cacheLabel, moveToIdleAfterClick))
             {
                 return;
             }
+            SetStatus("manufacturer OCR fallback", cacheLabel + " 没有缓存，开始 OCR 查找 " + config.ManufacturerText);
+            SetOcrSummary("制造商定位: " + cacheLabel + " 无缓存，进入 OCR 兜底");
 
             OcrSnapshot last = null;
             bool wroteMissCapture = false;
@@ -90,20 +93,21 @@ namespace FH6SkillPointOcr
                 if (i + 1 < attempts)
                 {
                     SetOcrSummary("制造商OCR: 未找到 " + config.ManufacturerText + "，补滚动后重试 " + (i + 2) + "/" + attempts);
-                    ScrollManufacturerList(config.ManufacturerRetryScrollTicks, "manufacturer retry scroll focus");
+                    ScrollManufacturerList(config.ManufacturerRetryScrollTicks, "manufacturer retry scroll focus", "补滚动后继续 OCR 查找 " + config.ManufacturerText);
                 }
             }
 
             Fail(last, "manufacturer-not-found-" + cacheLabel);
         }
 
-        private void ScrollManufacturerList(int ticks, string reason)
+        private void ScrollManufacturerList(int ticks, string reason, string afterScrollAction)
         {
-            SetStatus("manufacturer scroll", "鼠标移到屏幕中心，滚轮向下 " + ticks + " 格，然后移到右下角准备 OCR");
+            SetStatus("manufacturer scroll", "鼠标移到屏幕中心，滚轮向下 " + ticks + " 格；" + afterScrollAction);
             MoveMouseToScreenCenter(reason);
             input.ScrollDown(ticks, config.ScrollTickDelayMs);
             SleepWithFullAutoHotkey(config.SingleScrollDelayMs);
-            MoveMouseToScreenBottomRight("idle before manufacturer OCR");
+            MoveMouseToScreenBottomRight("idle before manufacturer cache/OCR");
+            SetStatus("manufacturer scroll done", afterScrollAction);
         }
 
         private static string CaptureSummary(OcrSnapshot snapshot)

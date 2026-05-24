@@ -82,7 +82,7 @@ namespace FH6AutomationShared
 
         internal static class Flow
         {
-            public const int ManufacturerScrollTicks = 100;
+            public const int ManufacturerScrollTicks = 10;
             public const int ManufacturerFindAttempts = 12;
             public const int ManufacturerRetryScrollTicks = 20;
             public const int ScrollTickDelayMs = 20;
@@ -102,6 +102,7 @@ namespace FH6AutomationShared
             public const int Max = 999;
             public const int PerVehicle = 32;
             public const int MinuteLoopGain = 10;
+            public const int MinuteLoopEstimatedLoopMs = 71300;
         }
 
         internal static class VehicleState
@@ -112,6 +113,7 @@ namespace FH6AutomationShared
             public const int ValidNew = 3;
             public const int Deletable = 4;
             public const int Drive = 5;
+            public const int Blank = -1;
 
             public const string None = "none";
             public const string InvalidNew = "invalid-new";
@@ -119,6 +121,7 @@ namespace FH6AutomationShared
             public const string DeletableName = "deletable";
             public const string DriveName = "drive";
             public const string DriveCheckedName = "drive-checked";
+            public const string BlankName = "blank";
         }
 
         internal static class Ranking
@@ -134,6 +137,7 @@ namespace FH6AutomationShared
             public const string DeleteVehicleExe = "FH6VehicleDeleteOcr.exe";
             public const string FullAutoExe = "FH6FullAuto.exe";
             public const string BlueprintCycleTestExe = "FH6BlueprintCycleTest.exe";
+            public const string EmergencyStopWatcherExe = "FH6EmergencyStopWatcher.exe";
             public const string MinuteLoopExe = "MinuteWLoop.exe";
             public const string BuyLoopExe = "SpaceDownEnterLoop.exe";
             public const string SkillSafeStop = "skill-safe-stop.request";
@@ -141,6 +145,7 @@ namespace FH6AutomationShared
             public const string MinuteSafeStop = "minute-safe-stop.request";
             public const string BuySafeStop = "buy-safe-stop.request";
             public const string SkillPointsState = "full-auto-skill-points.json";
+            public const string UiClickCache = "ui-click-cache.json";
         }
 
         internal static class FixedSequences

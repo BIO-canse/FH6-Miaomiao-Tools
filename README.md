@@ -25,9 +25,9 @@
 - `FH6FullAuto.exe`：全自动主程序，主要入口。
 - `AutoInputLoop.exe`：迎战巨汉 CR 挂机辅助。
 - `EnterTapLoop.exe`：快速开启大量抽奖、超级抽奖。
-- `README.md` / `使用说明.txt`：使用说明。
+- `README.pdf` / `README.md` / `使用说明.txt`：使用说明，优先看带图的 `README.pdf`。
 
-`bin/`、`runtime/`、`config/`、`assets/` 是程序运行需要的内部文件夹，不要删除或移动。
+`bin/`、`runtime/`、`config/`、`assets/` 是程序运行需要的内部文件夹，不要删除或移动。`debug/`、`state/` 会保存自动生成的日志、OCR 失败信息和虚拟列表状态；如果程序出问题，请保留这两个文件夹，方便排查。
 
 ## 前置准备
 
@@ -112,13 +112,14 @@
 
 ### EnterTapLoop.exe
 
-用于快速开启大量抽奖、超级抽奖。
+用于自动开启大量抽奖、超级抽奖。
 
 启动后等待 10 秒，然后不断执行：
 
 ```text
-Enter 按下 0.1 秒
-等待 0.1 秒
+Up
+Up
+Enter
 ```
 
 ## 不建议手动打开的内部组件

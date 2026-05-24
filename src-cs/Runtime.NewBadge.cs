@@ -22,7 +22,7 @@ namespace FH6SkillPointOcr
     {
         private CellKey FindValidNewCell()
         {
-            SetStatus("find valid new badge", "按虚拟表规划下一步：选择、滚动、OCR 或停止");
+            SetStatus("find valid new badge", UseTableOnlyVehicleSearch() ? "按定表虚拟列表规划下一步：选择、滚动或停止，不 OCR" : "按虚拟表规划下一步：选择、滚动、OCR 或停止");
             OcrSnapshot last = null;
             for (int i = 0; i < config.MaxFindNewScrolls; i++)
             {
@@ -43,6 +43,11 @@ namespace FH6SkillPointOcr
                     SetOcrSummary("虚拟列表: " + decision.Reason);
                     ScrollVehicleListDown(decision.ScrollTicks, "find valid new badge");
                     continue;
+                }
+
+                if (UseTableOnlyVehicleSearch())
+                {
+                    FailTableOnlyVehicleSearch("skill", decision.Reason);
                 }
 
                 DebugGate("find valid new badge", "OCR 车型和全新，第 " + (i + 1) + " 次：" + decision.Reason);

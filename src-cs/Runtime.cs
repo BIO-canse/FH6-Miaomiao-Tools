@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using FH6AutomationShared;
 
 namespace FH6SkillPointOcr
 {
@@ -34,6 +35,7 @@ namespace FH6SkillPointOcr
         private readonly OverlayRenderer overlay;
         private readonly string debugDir;
         private readonly string debugScreenshotDir;
+        private readonly string uiClickCachePath;
         private readonly Stopwatch elapsed = Stopwatch.StartNew();
         private int failures;
         private int loopCount;
@@ -70,9 +72,11 @@ namespace FH6SkillPointOcr
             debugDir = config.ResolvePath(config.DebugDir);
             Directory.CreateDirectory(debugDir);
             debugScreenshotDir = Path.Combine(debugDir, "screenshots");
+            uiClickCachePath = Path.Combine(config.BaseDir, "state", FH6AutomationShared.FH6AutomationConstants.Files.UiClickCache);
+            LoadSharedUiClickCacheIfAllowed();
             if (stepDebug) ResetDebugScreenshots();
             ocr = new OcrReader(config, stepDebug ? debugScreenshotDir : null);
-            string virtualListLog = stepDebug ? Path.Combine(debugDir, "virtual-list-edits-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log") : null;
+            string virtualListLog = Path.Combine(debugDir, "virtual-list-edits-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log");
             string virtualListPath = config.ResolvePath(config.VirtualListPath);
             vehicleList = new VirtualVehicleList(config.GridRows, virtualListLog, virtualListPath, virtualListLoadMode);
             overlay = new OverlayRenderer(config.OverlayEnabled);
@@ -158,16 +162,20 @@ namespace FH6SkillPointOcr
             if (!grid.Locked) BuildGrid();
             SetStage("查找待点技能点车辆");
             CellKey target = FindValidNewCell();
-            MoveSelectionToCell(target);
+            CellKey selectedTarget = MoveSelectionToCell(target);
             SetStage("执行点技能点固定序列");
             RunFixedSequence();
-            MarkVehicleCellProcessed(target);
-            bool completionBoundaryReached = IsCompletionBoundaryReached();
+            MarkVehicleCellProcessed(selectedTarget);
+            bool completionReached = UseTableOnlyVehicleSearch()
+                ? !vehicleList.HasPendingValidNew
+                : IsCompletionBoundaryReached();
             DeductSkillPointsForCompletedVehicle();
-            if (completionBoundaryReached)
+            if (completionReached)
             {
                 SetStatus("completed", "本轮技术点已点完，脚本停止");
-                throw new CompletedException("本轮完成后没有状态 3，且车辆列表完成边界已确认。");
+                throw new CompletedException(UseTableOnlyVehicleSearch()
+                    ? "定表虚拟列表内没有状态 3，本轮可点技术点车辆已处理完。"
+                    : "本轮完成后没有状态 3，且车辆列表完成边界已确认。");
             }
         }
 

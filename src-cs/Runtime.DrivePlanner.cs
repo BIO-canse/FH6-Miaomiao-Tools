@@ -61,15 +61,24 @@ namespace FH6SkillPointOcr
 
         private DriveSearchDecision PlanDriveVehicleSearch()
         {
-            CellKey target;
-            if (vehicleList.TryGetVisibleDriveVehicle(grid.VisibleColumns, out target))
+            CellKey targetGlobal;
+            if (vehicleList.TryGetDriveVehicleGlobalTarget(out targetGlobal))
             {
-                return DriveSearchDecision.Select(target, "当前可见范围已有状态 5");
+                return DriveSearchDecision.Select(targetGlobal, "虚拟表内已有状态 5，进入工作分支生成键盘路径");
             }
 
-            if (!vehicleList.IsVisibleSearchRangeObserved(grid.VisibleColumns))
+            if (UseTableOnlyVehicleSearch())
             {
-                return DriveSearchDecision.Observe("当前可见目标段还有未知格子");
+                if (vehicleList.HasDriveVehicle)
+                {
+                    return DriveSearchDecision.Observe("定表内仍有状态 5，但当前 offset 后方没有状态 5，可能已经滚过目标");
+                }
+                return DriveSearchDecision.Observe("定表虚拟列表内没有状态 5；按规则这里不允许默认退出或默认第一格");
+            }
+
+            if (subaruListBoundaryReached)
+            {
+                return DriveSearchDecision.UseDefault("车辆列表边界: " + subaruListBoundaryReason);
             }
 
             if (VisibleHasOtherManufacturerOrUnknown())
@@ -77,26 +86,9 @@ namespace FH6SkillPointOcr
                 return DriveSearchDecision.UseDefault("当前页已经出现目标车型完成边界，当前可见目标段已处理完");
             }
 
-            CellKey knownTarget;
-            int targetOffset;
-            if (vehicleList.TryGetDriveVehicleTarget(grid.VisibleColumns, out knownTarget, out targetOffset))
+            if (!vehicleList.IsVisibleSearchRangeObserved(grid.VisibleColumns))
             {
-                int delta = targetOffset - vehicleList.CurrentOffset;
-                if (delta > 0)
-                {
-                    return DriveSearchDecision.Scroll(
-                        delta,
-                        string.Format(
-                            CultureInfo.InvariantCulture,
-                            "虚拟表后方已有状态 5，滚动 {0} 格到 offset={1}",
-                            delta,
-                            targetOffset));
-                }
-            }
-
-            if (subaruListBoundaryReached)
-            {
-                return DriveSearchDecision.UseDefault("车辆列表边界: " + subaruListBoundaryReason);
+                return DriveSearchDecision.Observe("当前可见目标段还有未知格子");
             }
 
             int skip;
@@ -119,11 +111,11 @@ namespace FH6SkillPointOcr
             SetOcrSummary("虚拟列表: " + reason + "，直接处理，不 OCR");
             lastTargetSummary = string.Format(
                 CultureInfo.InvariantCulture,
-                "开蓝图车: col={0}, row={1}",
+                "开蓝图车: global_col={0}, row={1}",
                 target.Col,
                 target.Row);
-            UpdateOverlay(null, null, null, null, target);
-            Console.WriteLine("[DRIVE_TARGET] planned row={0} col={1}", target.Row, target.Col);
+            UpdateOverlay(null, null, null, null, VisibleLocalFromGlobal(target));
+            Console.WriteLine("[DRIVE_TARGET] planned global row={0} col={1}", target.Row, target.Col);
         }
     }
 }

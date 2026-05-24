@@ -1,33 +1,20 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
 using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading;
-using System.Web.Script.Serialization;
-using System.Windows.Forms;
 using FH6AutomationShared;
 
 namespace FH6SkillPointOcr
 {
     internal sealed partial class Runtime
     {
-        private Process fullAutoChildProcess;
-        private bool fullAutoUserSafeStopRequested;
-
         private void RunFullAutoLoop()
         {
             SetStage("A. 大世界自动进入车库标准位");
             SetStatus("full auto startup", "大世界自动进入车库标准位");
             EnterGarageStandardPosition();
+            FullAutoStageGap("车库标准位已就绪，准备进入定表阶段");
+            BuildInitialVehicleTableFromGarageStandardPosition();
+            FullAutoStageGap("定表完成并回到车库标准位，准备运行自动点技能点");
             RunSkillPointChild();
 
             while (true)
@@ -39,6 +26,7 @@ namespace FH6SkillPointOcr
                 RunPostMinuteReturnSequence();
                 FullAutoStageGap("返回流程结束，准备进入车库标准位");
                 EnterGarageStandardPosition();
+                FullAutoStageGap("车库标准位已就绪，准备运行自动点技能点");
                 RunSkillPointChild();
             }
         }
@@ -60,7 +48,7 @@ namespace FH6SkillPointOcr
         private void RunSkillPointChild()
         {
             SetStage("子程序: 自动点技能点");
-            SetStatus("full auto child", "衔接调用自动点技能点，本轮重新 OCR 扫表，使用总控技术点计数 " + remainingSkillPoints);
+            SetStatus("full auto child", "衔接调用自动点技能点，直接使用定表虚拟列表，使用总控技术点计数 " + remainingSkillPoints);
             List<string> args = BaseChildArgs(FH6AutomationConstants.Files.SkillSafeStop);
             args.Add("--task");
             args.Add("skill");
@@ -75,7 +63,8 @@ namespace FH6SkillPointOcr
 
         private void RunFullAutoStartupPreflight()
         {
-            SetOcrSummary("总控启动前置: 制造商定位使用滚动到底 + OCR 点击斯巴鲁，无需录制路径");
+            ClearSharedUiClickCache("full auto startup");
+            SetOcrSummary("总控启动前置: 第一轮先定表；后续点技能点、删车、找5车直接读写虚拟列表，不再做车辆格 OCR");
         }
 
         private void RunDeleteChildHandoff()
@@ -107,39 +96,6 @@ namespace FH6SkillPointOcr
             PersistFullAutoSkillPoints("before_minute_loop");
             string arguments = "--handoff --safe-stop-file " + QuoteArg(safeStopFile) + " --skill-points-state-file " + QuoteArg(SkillPointsStatePath());
             RunMinuteWLoopProcess(safeStopFile, arguments, true);
-        }
-
-        private void RunMinuteWLoopProcess(string safeStopFile, string arguments, bool syncSkillPointsAfterExit)
-        {
-            ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = ResolveMinuteWLoopPath();
-            psi.WorkingDirectory = config.BaseDir;
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = true;
-            psi.Arguments = arguments;
-
-            FullAutoStageGap("启动 1 分钟刷技术点子程序前预留间隔");
-            overlay.HideForCapture(0);
-            fullAutoChildProcess = Process.Start(psi);
-
-            try
-            {
-                while (!fullAutoChildProcess.HasExited)
-                {
-                    PollFullAutoHotkeysForChild(safeStopFile);
-                    Thread.Sleep(FH6AutomationConstants.Timing.ChildProcessPollMs);
-                }
-                if (fullAutoUserSafeStopRequested) throw new CompletedException("Space+V 安全结束：子程序已退出，主程序停止。");
-                if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(FH6AutomationConstants.Files.MinuteLoopExe + " 退出码 " + fullAutoChildProcess.ExitCode);
-                if (syncSkillPointsAfterExit) LoadFullAutoSkillPoints("minute loop completed");
-            }
-            finally
-            {
-                fullAutoChildProcess = null;
-                DeleteFileIfExists(safeStopFile);
-                overlay.ShowOverlay();
-            }
-            FullAutoStageGap("1 分钟刷技术点子程序结束后预留间隔");
         }
 
         private void RunPostMinuteReturnSequence()
@@ -200,7 +156,7 @@ namespace FH6SkillPointOcr
 
         private void ReopenSubaruListFromVehicleListForDriveSearch()
         {
-            SetStatus("reopen Subaru list", "Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 滚动到底 -> OCR 点击斯巴鲁 -> 鼠标停右侧");
+            SetStatus("reopen Subaru list", "Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 向下滚动 10 格 -> 优先缓存点击斯巴鲁，必要时 OCR -> 鼠标停右侧");
             ClearOcrFields();
             DebugGate("reopen Subaru list", "按 Enter 进入车辆列表");
             input.Tap("ENTER");
@@ -240,6 +196,7 @@ namespace FH6SkillPointOcr
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             MoveMouseToScreenBottomRight("idle after entering Subaru buy page");
             RunVehicleBuyScriptRounds(buyRounds);
+            AppendPurchasedVehiclesToVirtualTable(buyRounds);
             FullAutoStageGap("自动买车脚本结束，准备返回菜单");
             for (int i = 0; i < FH6AutomationConstants.Flow.PreCreativeExitEscCount; i++)
             {
@@ -285,7 +242,7 @@ namespace FH6SkillPointOcr
 
         private CellKey FindDriveVehicleCell()
         {
-            SetStatus("find drive vehicle", "按虚拟表规划下一步：选择、滚动、OCR 或默认第一格");
+            SetStatus("find drive vehicle", UseTableOnlyVehicleSearch() ? "按定表虚拟列表规划下一步：选择、滚动或默认第一格，不 OCR" : "按虚拟表规划下一步：选择、滚动、OCR 或默认第一格");
             OcrSnapshot last = null;
             for (int i = 0; i < config.MaxFindNewScrolls; i++)
             {
@@ -306,6 +263,11 @@ namespace FH6SkillPointOcr
                     SetOcrSummary("虚拟列表: " + decision.Reason);
                     ScrollVehicleListDown(decision.ScrollTicks, "find drive vehicle");
                     continue;
+                }
+
+                if (UseTableOnlyVehicleSearch())
+                {
+                    FailTableOnlyVehicleSearch("drive", decision.Reason);
                 }
 
                 DebugGate("find drive vehicle", "OCR 车型和 900，第 " + (i + 1) + " 次：" + decision.Reason);
@@ -331,7 +293,7 @@ namespace FH6SkillPointOcr
 
         private void ResetToSubaruListStartForDriveSearch()
         {
-            SetStatus("reset Subaru list for drive", "Esc -> 0.5 秒 -> Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 滚动到底 -> OCR 点击斯巴鲁 -> 鼠标停右侧");
+            SetStatus("reset Subaru list for drive", "Esc -> 0.5 秒 -> Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 向下滚动 10 格 -> 优先缓存点击斯巴鲁，必要时 OCR -> 鼠标停右侧");
             input.Tap("ESC");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             ReopenSubaruListFromVehicleListForDriveSearch();
@@ -347,301 +309,6 @@ namespace FH6SkillPointOcr
             UpdateOverlay(observation.TargetCells, observation.ValidNewCells, observation.InvalidNewCells, observation.DeletableCells, observation.DriveCells, chosen);
             if (!chosen.HasValue) WriteOcrDump(snapshot, "drive-current");
             return chosen;
-        }
-
-        private void FindTextAndClick(string text, string label)
-        {
-            FindTextAndClick(text, label, true);
-        }
-
-        private void FindTextAndClick(string text, string label, bool moveToIdleAfterClick)
-        {
-            string cacheKey = UiClickCacheKey("text", label, text);
-            if (TryClickCachedUiPoint(cacheKey, label, moveToIdleAfterClick))
-            {
-                return;
-            }
-
-            OcrSnapshot last = null;
-            for (int i = 0; i < FH6AutomationConstants.Ocr.UiFindAttempts; i++)
-            {
-                DebugGate("find text " + label, "OCR 找 " + text + " 并点击，第 " + (i + 1) + " 次");
-                WaitBeforeUiOcrCapture("before OCR " + label);
-                last = ReadScreen();
-                List<OcrMatch> matches = FindConfiguredCjkTextMatches(last, text);
-                SetOcrFields(new OcrFieldGroup(label, matches));
-                SetOcrSummary("OCR: " + text + "=" + matches.Count);
-                if (matches.Count > 0)
-                {
-                    OcrMatch chosen = ChooseUiTextMatch(matches, text);
-                    Point center = chosen.RectCenter();
-                    RememberUiClickPoint(cacheKey, label, center);
-                    input.MoveTo(center.X, center.Y);
-                    input.Click();
-                    if (moveToIdleAfterClick) MoveMouseToScreenBottomRight("idle after clicking " + label);
-                    return;
-                }
-                WriteOcrDump(last, "find-text-" + SanitizeDebugLabel(label));
-                FullAutoSleep(FH6AutomationConstants.Timing.UiFindRetryDelayMs);
-            }
-
-            Fail(last, "text-not-found-" + label);
-        }
-
-        private string UiClickCacheKey(string category, string label, string text)
-        {
-            return category + "|" + label + "|" + text;
-        }
-
-        private bool TryClickCachedUiPoint(string cacheKey, string label, bool moveToIdleAfterClick)
-        {
-            Point point;
-            if (!uiClickCache.TryGetValue(cacheKey, out point)) return false;
-
-            DebugGate("ui click cache " + label, "复用 UI 坐标 " + label + " (" + point.X + "," + point.Y + ")");
-            SetOcrSummary("UI坐标缓存: " + label + " -> " + point.X + "," + point.Y + "，等待 0.5 秒后点击");
-            FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
-            input.MoveTo(point.X, point.Y);
-            input.Click();
-            if (moveToIdleAfterClick) MoveMouseToScreenBottomRight("idle after clicking cached " + label);
-            return true;
-        }
-
-        private void RememberUiClickPoint(string cacheKey, string label, Point point)
-        {
-            uiClickCache[cacheKey] = point;
-            SetOcrSummary("UI坐标缓存: 已记录 " + label + " -> " + point.X + "," + point.Y);
-        }
-
-        private void WaitBeforeUiOcrCapture(string reason)
-        {
-            SetOcrSummary("UI OCR 等待画面稳定 1 秒: " + reason);
-            SleepWithFullAutoHotkey(FH6AutomationConstants.Timing.UiOcrStableWaitMs);
-        }
-
-        private List<string> BaseChildArgs(string safeStopFileName)
-        {
-            string safeStopFile = SafeStopPath(safeStopFileName);
-            DeleteFileIfExists(safeStopFile);
-            List<string> args = new List<string>();
-            args.Add("--config");
-            args.Add(config.SourcePath);
-            args.Add("--mode");
-            args.Add("normal");
-            args.Add("--safe-stop-file");
-            args.Add(safeStopFile);
-            return args;
-        }
-
-        private void RunChildProcess(string exePath, List<string> args, string label)
-        {
-            string safeStopFile = ExtractSafeStopFile(args);
-            ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = exePath;
-            psi.WorkingDirectory = config.BaseDir;
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = true;
-            psi.Arguments = JoinArgs(args);
-
-            SetStatus("run child " + label, Path.GetFileName(exePath) + " " + psi.Arguments);
-            FullAutoStageGap("启动子程序 " + label + " 前预留间隔");
-            overlay.HideForCapture(0);
-            fullAutoChildProcess = Process.Start(psi);
-            try
-            {
-                while (!fullAutoChildProcess.HasExited)
-                {
-                    PollFullAutoHotkeysForChild(safeStopFile);
-                    Thread.Sleep(FH6AutomationConstants.Timing.ChildProcessPollMs);
-                }
-
-                if (fullAutoUserSafeStopRequested) throw new CompletedException("Space+V 安全结束：子程序已退出，主程序停止。");
-                if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(Path.GetFileName(exePath) + " 退出码 " + fullAutoChildProcess.ExitCode);
-            }
-            finally
-            {
-                fullAutoChildProcess = null;
-                DeleteFileIfExists(safeStopFile);
-                overlay.ShowOverlay();
-            }
-            FullAutoStageGap("子程序 " + label + " 结束后预留间隔");
-        }
-
-        private void PollFullAutoHotkeysForChild(string safeStopFile)
-        {
-            if (input.ShouldStop())
-            {
-                KillChildIfRunning();
-                throw new StopRequestedException();
-            }
-            if (!fullAutoUserSafeStopRequested && IsKeyDown(FH6AutomationConstants.Keys.HotkeyModifierVirtualKey) && IsKeyDown(FH6AutomationConstants.Keys.FullAutoSafeStopVirtualKey))
-            {
-                fullAutoUserSafeStopRequested = true;
-                RequestChildSafeStop(safeStopFile, "Space+V 安全结束：要求当前子程序跑完本轮后退出");
-            }
-        }
-
-        private void FullAutoSleep(int ms)
-        {
-            Stopwatch sw = Stopwatch.StartNew();
-            while (sw.ElapsedMilliseconds < ms)
-            {
-                ThrowIfFullAutoSafeStopWithoutChild();
-                input.SleepMs(Math.Min(FH6AutomationConstants.Timing.FullAutoSleepSliceMs, Math.Max(1, ms - (int)sw.ElapsedMilliseconds)));
-            }
-        }
-
-        private void ThrowIfFullAutoSafeStopWithoutChild()
-        {
-            if (input.ShouldStop()) throw new StopRequestedException();
-            if (IsKeyDown(FH6AutomationConstants.Keys.HotkeyModifierVirtualKey) && IsKeyDown(FH6AutomationConstants.Keys.FullAutoSafeStopVirtualKey))
-            {
-                fullAutoUserSafeStopRequested = true;
-                throw new CompletedException("Space+V 安全结束：当前没有子程序运行，主程序直接停止。");
-            }
-        }
-
-        private void FullAutoCheckPoint()
-        {
-            if (task == AutomationTask.FullAuto) ThrowIfFullAutoSafeStopWithoutChild();
-        }
-
-        private void SleepWithFullAutoHotkey(int ms)
-        {
-            if (task == AutomationTask.FullAuto) FullAutoSleep(ms);
-            else input.SleepMs(ms);
-        }
-
-        private void FullAutoStageGap(string reason)
-        {
-            if (task != AutomationTask.FullAuto && task != AutomationTask.BlueprintCycleTest) return;
-            SetStage("阶段间隔");
-            SetStatus("full auto transition", reason + "，等待 1 秒");
-            FullAutoSleep(FH6AutomationConstants.Timing.FullAutoStageGapMs);
-        }
-
-        private void RequestChildSafeStop(string safeStopFile, string reason)
-        {
-            if (string.IsNullOrWhiteSpace(safeStopFile)) return;
-            Console.WriteLine("[FULL_AUTO_SAFE_STOP] " + reason);
-            Directory.CreateDirectory(Path.GetDirectoryName(safeStopFile));
-            File.WriteAllText(safeStopFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), Encoding.UTF8);
-        }
-
-        private void KillChildIfRunning()
-        {
-            try
-            {
-                if (fullAutoChildProcess != null && !fullAutoChildProcess.HasExited) fullAutoChildProcess.Kill();
-            }
-            catch
-            {
-            }
-        }
-
-        private string SafeStopPath(string fileName)
-        {
-            return Path.Combine(config.BaseDir, "state", fileName);
-        }
-
-        private string SkillPointsStatePath()
-        {
-            return Path.Combine(config.BaseDir, "state", FH6AutomationConstants.Files.SkillPointsState);
-        }
-
-        private void PersistFullAutoSkillPoints(string reason)
-        {
-            try
-            {
-                string path = SkillPointsStatePath();
-                string directory = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-
-                Dictionary<string, object> root = new Dictionary<string, object>();
-                root["schema"] = "fh6_skill_points_state.v1";
-                root["updated_at"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
-                root["reason"] = reason;
-                root["skill_points"] = Math.Max(0, Math.Min(FH6AutomationConstants.SkillPoints.Max, remainingSkillPoints));
-                File.WriteAllText(path, new JavaScriptSerializer().Serialize(root), Encoding.UTF8);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[FULL_AUTO_SKILL_POINTS] 写入失败：" + ex.Message);
-            }
-        }
-
-        private void LoadFullAutoSkillPoints(string reason)
-        {
-            try
-            {
-                string path = SkillPointsStatePath();
-                if (!File.Exists(path)) return;
-                Dictionary<string, object> root = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path, Encoding.UTF8));
-                object value;
-                if (!root.TryGetValue("skill_points", out value)) return;
-                remainingSkillPoints = Math.Max(0, Math.Min(FH6AutomationConstants.SkillPoints.Max, Convert.ToInt32(value, CultureInfo.InvariantCulture)));
-                SetStatus("skill points synced", reason + "，当前技术点 " + remainingSkillPoints);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[FULL_AUTO_SKILL_POINTS] 读取失败：" + ex.Message);
-            }
-        }
-
-        private string ResolveBinPath(string exeName)
-        {
-            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, exeName);
-            if (File.Exists(path)) return path;
-            path = Path.Combine(config.BaseDir, "bin", exeName);
-            if (File.Exists(path)) return path;
-            throw new FileNotFoundException("找不到子程序", exeName);
-        }
-
-        private string ResolveMinuteWLoopPath()
-        {
-            string path = ResolveBinPath(FH6AutomationConstants.Files.MinuteLoopExe);
-            return path;
-        }
-
-        private static string ExtractSafeStopFile(List<string> args)
-        {
-            for (int i = 0; i + 1 < args.Count; i++)
-            {
-                if (args[i] == "--safe-stop-file") return args[i + 1];
-            }
-            return null;
-        }
-
-        private static string JoinArgs(List<string> args)
-        {
-            return string.Join(" ", args.Select(QuoteArg).ToArray());
-        }
-
-        private static string QuoteArg(string arg)
-        {
-            if (arg == null) return "\"\"";
-            return "\"" + arg.Replace("\"", "\\\"") + "\"";
-        }
-
-        private static void DeleteFileIfExists(string path)
-        {
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path)) File.Delete(path);
-            }
-            catch
-            {
-            }
-        }
-
-        private static string SanitizeDebugLabel(string label)
-        {
-            StringBuilder sb = new StringBuilder();
-            foreach (char ch in label)
-            {
-                sb.Append(char.IsLetterOrDigit(ch) ? ch : '_');
-            }
-            return sb.Length == 0 ? "text" : sb.ToString();
         }
 
     }

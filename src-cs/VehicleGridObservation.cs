@@ -19,5 +19,7 @@ namespace FH6SkillPointOcr
         public HashSet<CellKey> ManufacturerCells = new HashSet<CellKey>();
         public HashSet<CellKey> DeletableCells = new HashSet<CellKey>();
         public HashSet<CellKey> DriveCells = new HashSet<CellKey>();
+        public HashSet<CellKey> BlankCells = new HashSet<CellKey>();
+        public Dictionary<CellKey, int> PerformanceScores = new Dictionary<CellKey, int>();
     }
 }

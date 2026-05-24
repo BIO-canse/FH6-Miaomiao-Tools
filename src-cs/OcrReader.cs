@@ -32,15 +32,24 @@ namespace FH6SkillPointOcr
         private readonly string rapidOcrPython;
         private readonly string rapidOcrBridge;
         private readonly string debugImageDir;
+        private readonly Func<bool> shouldStop;
+        private readonly Action pollSafeStop;
         private Process paddleOcrProcess;
         private Process rapidOcrProcess;
         private readonly StringBuilder paddleOcrErrors = new StringBuilder();
         private readonly StringBuilder rapidOcrErrors = new StringBuilder();
 
         public OcrReader(Config config, string debugImageDir)
+            : this(config, debugImageDir, null, null)
+        {
+        }
+
+        public OcrReader(Config config, string debugImageDir, Func<bool> shouldStop, Action pollSafeStop)
         {
             this.config = config;
             this.debugImageDir = debugImageDir;
+            this.shouldStop = shouldStop;
+            this.pollSafeStop = pollSafeStop;
             jsonSerializer.MaxJsonLength = int.MaxValue;
             usePaddleOcr = string.Equals(config.OcrEngine, "paddleocr", StringComparison.OrdinalIgnoreCase);
             useRapidOcr = string.Equals(config.OcrEngine, "rapidocr", StringComparison.OrdinalIgnoreCase);
@@ -359,9 +368,11 @@ namespace FH6SkillPointOcr
             psi.EnvironmentVariables["TESSDATA_PREFIX"] = "tessdata";
             using (Process process = Process.Start(psi))
             {
-                string stdout = process.StandardOutput.ReadToEnd();
-                string stderr = process.StandardError.ReadToEnd();
-                process.WaitForExit();
+                System.Threading.Tasks.Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+                System.Threading.Tasks.Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+                WaitForProcessExitWithHotkeys(process, FH6AutomationConstants.Ocr.BridgeRequestTimeoutMs, "Tesseract 执行超时");
+                string stdout = stdoutTask.Result;
+                string stderr = stderrTask.Result;
                 if (process.ExitCode != 0) throw new InvalidOperationException("Tesseract 执行失败：" + stderr);
                 return stdout;
             }
@@ -580,19 +591,53 @@ namespace FH6SkillPointOcr
         private string ReadBridgeLineWithTimeout(Process process, int timeoutMs, string context, StringBuilder errors)
         {
             System.Threading.Tasks.Task<string> readTask = process.StandardOutput.ReadLineAsync();
-            if (readTask.Wait(timeoutMs))
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            while (true)
             {
-                return readTask.Result;
-            }
+                PollOcrWaitHotkeys(process);
+                if (readTask.Wait(FH6AutomationConstants.Timing.SleepSliceMs))
+                {
+                    return readTask.Result;
+                }
+                if (process.HasExited && readTask.IsCompleted)
+                {
+                    return readTask.Result;
+                }
+                if (stopwatch.ElapsedMilliseconds < timeoutMs) continue;
 
-            TryKillProcess(process);
-            string stderr;
-            lock (errors)
-            {
-                stderr = errors.ToString();
+                TryKillProcess(process);
+                string stderr;
+                lock (errors)
+                {
+                    stderr = errors.ToString();
+                }
+                string suffix = string.IsNullOrWhiteSpace(stderr) ? "" : "\r\nSTDERR:\r\n" + stderr;
+                throw new TimeoutException(context + "，超过 " + (timeoutMs / 1000).ToString(CultureInfo.InvariantCulture) + " 秒。" + suffix);
             }
-            string suffix = string.IsNullOrWhiteSpace(stderr) ? "" : "\r\nSTDERR:\r\n" + stderr;
-            throw new TimeoutException(context + "，超过 " + (timeoutMs / 1000).ToString(CultureInfo.InvariantCulture) + " 秒。" + suffix);
+        }
+
+        private void WaitForProcessExitWithHotkeys(Process process, int timeoutMs, string context)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            while (true)
+            {
+                PollOcrWaitHotkeys(process);
+                if (process.WaitForExit(FH6AutomationConstants.Timing.SleepSliceMs)) return;
+                if (stopwatch.ElapsedMilliseconds < timeoutMs) continue;
+
+                TryKillProcess(process);
+                throw new TimeoutException(context + "，超过 " + (timeoutMs / 1000).ToString(CultureInfo.InvariantCulture) + " 秒。");
+            }
+        }
+
+        private void PollOcrWaitHotkeys(Process process)
+        {
+            if (shouldStop != null && shouldStop())
+            {
+                TryKillProcess(process);
+                throw new StopRequestedException();
+            }
+            if (pollSafeStop != null) pollSafeStop();
         }
 
         private static void TryKillProcess(Process process)

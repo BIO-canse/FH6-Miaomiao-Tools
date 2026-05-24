@@ -23,8 +23,9 @@ namespace FH6SkillPointOcr
         private List<OcrMatch> FindTargetVehicleMatches(OcrSnapshot snapshot)
         {
             List<OcrMatch> matches = ocr.Find(snapshot, config.TargetVehicleText);
-            if (matches.Count > 0) return matches;
-            return ocr.FindLatinFuzzy(snapshot, config.TargetVehicleText, FH6AutomationConstants.Ocr.TargetVehicleLatinFuzzyDistance);
+            matches.AddRange(FindLatinContainsMatches(snapshot, config.TargetVehicleText));
+            matches.AddRange(ocr.FindLatinFuzzy(snapshot, config.TargetVehicleText, FH6AutomationConstants.Ocr.TargetVehicleLatinFuzzyDistance));
+            return DeduplicateOcrMatches(matches);
         }
 
         private List<OcrMatch> FindNewBadgeMatches(OcrSnapshot snapshot)
@@ -48,27 +49,28 @@ namespace FH6SkillPointOcr
 
         private List<OcrMatch> FindDeleteMarkerMatches(OcrSnapshot snapshot)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, config.DeleteMarkerText);
-            if (matches.Count > 0) return matches;
-            return ocr.FindLatinFuzzy(snapshot, config.DeleteMarkerText, FH6AutomationConstants.Ocr.MarkerLatinFuzzyDistance);
+            return ocr.Find(snapshot, config.DeleteMarkerText);
         }
 
         private List<OcrMatch> FindDriveMarkerMatches(OcrSnapshot snapshot)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, config.DriveMarkerText);
-            if (matches.Count > 0) return matches;
-            return ocr.FindLatinFuzzy(snapshot, config.DriveMarkerText, FH6AutomationConstants.Ocr.MarkerLatinFuzzyDistance);
+            return ocr.Find(snapshot, config.DriveMarkerText);
         }
 
         private List<OcrMatch> FindConfiguredCjkTextMatches(OcrSnapshot snapshot, string text)
         {
             List<OcrMatch> matches = ocr.Find(snapshot, text);
-            if (matches.Count > 0) return matches;
-            return ocr.FindCjkFuzzy(
+            matches.AddRange(FindCjkLooseMatches(
                 snapshot,
                 text,
                 Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
-                Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength));
+                Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
+            matches.AddRange(ocr.FindCjkFuzzy(
+                snapshot,
+                text,
+                Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
+                Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
+            return DeduplicateOcrMatches(matches);
         }
 
         private OcrMatch ChooseUiTextMatch(List<OcrMatch> matches, string text)
@@ -97,6 +99,108 @@ namespace FH6SkillPointOcr
                 sb.Append(char.ToUpperInvariant(ch));
             }
             return sb.ToString();
+        }
+
+        private List<OcrMatch> FindLatinContainsMatches(OcrSnapshot snapshot, string text)
+        {
+            List<OcrMatch> result = new List<OcrMatch>();
+            string needle = NormalizeLatinLoose(text);
+            if (snapshot == null || needle.Length == 0) return result;
+
+            foreach (OcrMatch match in SnapshotCandidates(snapshot))
+            {
+                string haystack = NormalizeLatinLoose(match.Text);
+                if (haystack.Contains(needle)) result.Add(match);
+            }
+
+            return result;
+        }
+
+        private List<OcrMatch> FindCjkLooseMatches(OcrSnapshot snapshot, string text, int minCommonChars, int maxNormalizedLength)
+        {
+            List<OcrMatch> result = new List<OcrMatch>();
+            string needle = NormalizeCjkLoose(text);
+            if (snapshot == null || needle.Length == 0) return result;
+
+            foreach (OcrMatch match in SnapshotCandidates(snapshot))
+            {
+                string haystack = NormalizeCjkLoose(match.Text);
+                if (haystack.Length == 0 || haystack.Length > maxNormalizedLength) continue;
+                if (haystack.Contains(needle) || needle.Contains(haystack) || CommonCharCountLoose(needle, haystack) >= minCommonChars)
+                {
+                    result.Add(match);
+                }
+            }
+
+            return result;
+        }
+
+        private IEnumerable<OcrMatch> SnapshotCandidates(OcrSnapshot snapshot)
+        {
+            if (snapshot == null) yield break;
+            if (snapshot.Words != null)
+            {
+                foreach (OcrMatch match in snapshot.Words) yield return match;
+            }
+            if (snapshot.Lines != null)
+            {
+                foreach (OcrMatch match in snapshot.Lines) yield return match;
+            }
+        }
+
+        private static List<OcrMatch> DeduplicateOcrMatches(IEnumerable<OcrMatch> matches)
+        {
+            List<OcrMatch> result = new List<OcrMatch>();
+            HashSet<string> seen = new HashSet<string>();
+            if (matches == null) return result;
+
+            foreach (OcrMatch match in matches)
+            {
+                if (match == null) continue;
+                string key = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}:{1}:{2}:{3}",
+                    (int)Math.Round(match.Rect.Left / 3),
+                    (int)Math.Round(match.Rect.Top / 3),
+                    (int)Math.Round(match.Rect.Right / 3),
+                    (int)Math.Round(match.Rect.Bottom / 3));
+                if (seen.Add(key)) result.Add(match);
+            }
+
+            return result;
+        }
+
+        private static string NormalizeLatinLoose(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            StringBuilder sb = new StringBuilder();
+            foreach (char ch in text)
+            {
+                if (char.IsLetterOrDigit(ch)) sb.Append(char.ToUpperInvariant(ch));
+            }
+            return sb.ToString();
+        }
+
+        private static string NormalizeCjkLoose(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            StringBuilder sb = new StringBuilder();
+            foreach (char ch in text)
+            {
+                if (ch >= '\u4e00' && ch <= '\u9fff') sb.Append(ch);
+            }
+            return sb.ToString();
+        }
+
+        private static int CommonCharCountLoose(string a, string b)
+        {
+            HashSet<char> seen = new HashSet<char>(a.ToCharArray());
+            int count = 0;
+            foreach (char ch in b)
+            {
+                if (seen.Remove(ch)) count++;
+            }
+            return count;
         }
     }
 }

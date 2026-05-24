@@ -46,14 +46,34 @@ namespace FH6SkillPointOcr
         private void ScrollVehicleListDown(int ticks, string action)
         {
             string amount = ticks == 1 ? "一格" : ticks + " 格";
-            DebugGate(action, "车辆列表滚轮向下" + amount);
+            DebugGate(action, "车辆列表按 Right 向后翻" + amount);
             ClearOcrFields();
-            MoveMouseToFirstVisibleCellCenter("vehicle list scroll focus");
-            input.ScrollDown(ticks, config.ScrollTickDelayMs);
-            vehicleList.ScrollDown(ticks);
+            for (int i = 0; i < ticks; i++)
+            {
+                input.Tap("RIGHT");
+                vehicleList.KeyboardMoveViewRight(1, action);
+                UpdateOverlay(null, null, null, null);
+                input.SleepMs(config.SingleScrollDelayMs);
+            }
             if (task == AutomationTask.DeleteVehicles) deleteSelectionKnown = false;
-            input.SleepMs(config.SingleScrollDelayMs);
-            MoveMouseToFirstVisibleCellCenter("idle in vehicle list after scroll");
+            MoveMouseToFirstVisibleCellCenter("idle in vehicle list after keyboard scroll");
+            UpdateOverlay(null, null, null, null);
+        }
+
+        private void ScrollVehicleListUp(int ticks, string action)
+        {
+            string amount = ticks == 1 ? "一格" : ticks + " 格";
+            DebugGate(action, "车辆列表按 Left 向前翻" + amount);
+            ClearOcrFields();
+            for (int i = 0; i < ticks; i++)
+            {
+                input.Tap("LEFT");
+                vehicleList.KeyboardMoveViewLeft(1, action);
+                UpdateOverlay(null, null, null, null);
+                input.SleepMs(config.SingleScrollDelayMs);
+            }
+            if (task == AutomationTask.DeleteVehicles) deleteSelectionKnown = false;
+            MoveMouseToFirstVisibleCellCenter("idle in vehicle list after keyboard scroll left");
             UpdateOverlay(null, null, null, null);
         }
 
@@ -64,11 +84,15 @@ namespace FH6SkillPointOcr
 
             DebugGate("return vehicle list top", reason + " x" + offset);
             ClearOcrFields();
-            MoveMouseToFirstVisibleCellCenter("vehicle list scroll focus");
-            input.ScrollUp(offset, config.ScrollTickDelayMs);
+            for (int i = 0; i < offset; i++)
+            {
+                input.Tap("LEFT");
+                vehicleList.KeyboardMoveViewLeft(1, "return vehicle list top");
+                UpdateOverlay(null, null, null, null);
+                input.SleepMs(config.SingleScrollDelayMs);
+            }
             vehicleList.ResetView();
             if (task == AutomationTask.DeleteVehicles) deleteSelectionKnown = false;
-            input.SleepMs(config.SingleScrollDelayMs);
             MoveMouseToFirstVisibleCellCenter("idle in vehicle list after scroll up");
             UpdateOverlay(null, null, null, null);
         }
@@ -87,28 +111,34 @@ namespace FH6SkillPointOcr
                 return;
             }
 
-            bool sawReservedFirstCell = false;
             foreach (CellKey local in manufacturerCells)
             {
                 CellKey global = vehicleList.ToGlobal(local);
-                if (global.Row == 0 && global.Col == 0)
-                {
-                    sawReservedFirstCell = true;
-                    continue;
-                }
                 if (vehicleList.HasKnownCell(global)) continue;
                 return;
             }
 
             subaruListBoundaryReached = true;
-            subaruListBoundaryReason = sawReservedFirstCell
-                ? "只识别到全局第一个占位斯巴鲁"
-                : "当前车辆列表可处理区域没有识别到斯巴鲁";
+            subaruListBoundaryReason = "当前车辆列表可处理区域没有识别到新的斯巴鲁格子";
         }
 
         private bool VisibleHasOtherManufacturerOrUnknown()
         {
             return grid.Ready && vehicleList.SearchBoundaryReached(grid.VisibleColumns);
+        }
+
+        private bool UseTableOnlyVehicleSearch()
+        {
+            return task == AutomationTask.FullAuto || virtualListLoadMode == VirtualListLoadMode.FullState;
+        }
+
+        private void FailTableOnlyVehicleSearch(string phase, string reason)
+        {
+            failures++;
+            string message = phase + " 进入了 OCR 观察分支，但当前模式要求只使用定表虚拟列表。原因：" + reason + "；" + vehicleList.Summary();
+            SetOcrSummary("定表虚拟列表不完整: " + reason);
+            WriteFailureFullScreenCapture("table-only-" + phase);
+            throw new InvalidOperationException(message);
         }
 
         private void RememberVehicleResumeOffset()

@@ -80,12 +80,43 @@ namespace FH6SkillPointOcr
             Persist("reset_view");
         }
 
+        public void SetPreviousManufacturerColumnVisibleForTableBuild(string reason)
+        {
+            CurrentOffset = -1;
+            Log("TABLE_BUILD_PREVIOUS_MANUFACTURER_COLUMN_VISIBLE offset=-1 reason=" + reason);
+            Persist("table_build_previous_manufacturer_column");
+        }
+
         public void ScrollDown(int ticks)
         {
             if (ticks <= 0) return;
             CurrentOffset += ticks;
             Log("SCROLL_DOWN ticks=" + ticks + " offset=" + CurrentOffset);
             Persist("scroll_down");
+        }
+
+        public void ScrollUp(int ticks)
+        {
+            if (ticks <= 0) return;
+            CurrentOffset = Math.Max(0, CurrentOffset - ticks);
+            Log("SCROLL_UP ticks=" + ticks + " offset=" + CurrentOffset);
+            Persist("scroll_up");
+        }
+
+        public void KeyboardMoveViewRight(int ticks, string reason)
+        {
+            if (ticks <= 0) return;
+            CurrentOffset += ticks;
+            Log("KEYBOARD_VIEW_RIGHT ticks=" + ticks + " offset=" + CurrentOffset + " reason=" + reason);
+            Persist("keyboard_view_right");
+        }
+
+        public void KeyboardMoveViewLeft(int ticks, string reason)
+        {
+            if (ticks <= 0) return;
+            CurrentOffset = Math.Max(0, CurrentOffset - ticks);
+            Log("KEYBOARD_VIEW_LEFT ticks=" + ticks + " offset=" + CurrentOffset + " reason=" + reason);
+            Persist("keyboard_view_left");
         }
 
         public void RememberResumeOffset(int offset)
@@ -131,6 +162,63 @@ namespace FH6SkillPointOcr
                 IsBeforeKnownBoundary(new CellKey(c.Row, c.Col)));
         }
 
+        public bool TryGetPendingValidNewGlobalTarget(out CellKey globalCell)
+        {
+            globalCell = new CellKey(0, 0);
+            VirtualVehicleCell pending = cells.Values
+                .Where(c =>
+                {
+                    CellKey global = new CellKey(c.Row, c.Col);
+                    return c.NewState == FH6AutomationConstants.VehicleState.ValidNewName &&
+                        !ShouldSkipPlannerCell(global) &&
+                        IsBeforeKnownBoundary(global);
+                })
+                .OrderBy(c => c.Col * FH6AutomationConstants.Ranking.LeftFirstWeight + c.Row)
+                .FirstOrDefault();
+
+            if (pending == null) return false;
+            globalCell = new CellKey(pending.Row, pending.Col);
+            return true;
+        }
+
+        public bool TryGetDeleteVehicleGlobalTarget(out CellKey globalCell)
+        {
+            globalCell = new CellKey(0, 0);
+            VirtualVehicleCell pending = cells.Values
+                .Where(c =>
+                {
+                    CellKey global = new CellKey(c.Row, c.Col);
+                    return IsDeleteTargetCell(c) &&
+                        !ShouldSkipPlannerCell(global) &&
+                        IsBeforeKnownBoundary(global);
+                })
+                .OrderBy(c => c.Col * FH6AutomationConstants.Ranking.LeftFirstWeight + c.Row)
+                .FirstOrDefault();
+
+            if (pending == null) return false;
+            globalCell = new CellKey(pending.Row, pending.Col);
+            return true;
+        }
+
+        public bool TryGetDriveVehicleGlobalTarget(out CellKey globalCell)
+        {
+            globalCell = new CellKey(0, 0);
+            VirtualVehicleCell pending = cells.Values
+                .Where(c =>
+                {
+                    CellKey global = new CellKey(c.Row, c.Col);
+                    return c.NewState == FH6AutomationConstants.VehicleState.DriveName &&
+                        !ShouldSkipPlannerCell(global) &&
+                        IsBeforeKnownBoundary(global);
+                })
+                .OrderBy(c => c.Col * FH6AutomationConstants.Ranking.LeftFirstWeight + c.Row)
+                .FirstOrDefault();
+
+            if (pending == null) return false;
+            globalCell = new CellKey(pending.Row, pending.Col);
+            return true;
+        }
+
         public bool IsCompletionBoundaryReached(out CellKey lastTarget, out CellKey nextCell)
         {
             lastTarget = new CellKey(0, 0);
@@ -169,7 +257,7 @@ namespace FH6SkillPointOcr
 
             if (pending == null) return false;
 
-            targetOffset = Math.Max(0, pending.Col - visibleColumns + 1);
+            targetOffset = PreferredTargetOffset(pending, visibleColumns, 0);
             localCell = new CellKey(pending.Row, pending.Col - targetOffset);
             return localCell.Col >= 0 && localCell.Col < visibleColumns;
         }
@@ -190,7 +278,7 @@ namespace FH6SkillPointOcr
 
             if (pending == null) return false;
 
-            targetOffset = Math.Max(CurrentOffset, pending.Col - visibleColumns + 1);
+            targetOffset = PreferredTargetOffset(pending, visibleColumns, CurrentOffset);
             localCell = new CellKey(pending.Row, pending.Col - targetOffset);
             return localCell.Col >= 0 && localCell.Col < visibleColumns;
         }
@@ -344,8 +432,6 @@ namespace FH6SkillPointOcr
                 {
                     if (!IsDeleteTargetCell(c) || c.Col < CurrentOffset) return false;
                     if (!IsBeforeKnownBoundary(new CellKey(c.Row, c.Col))) return false;
-                    int targetOffsetForCell = Math.Max(CurrentOffset, c.Col - visibleColumns + 1);
-                    CellKey localForCell = new CellKey(c.Row, c.Col - targetOffsetForCell);
                     return !ShouldSkipPlannerCell(new CellKey(c.Row, c.Col));
                 })
                 .OrderBy(c => c.Col * FH6AutomationConstants.Ranking.LeftFirstWeight + c.Row)
@@ -353,7 +439,7 @@ namespace FH6SkillPointOcr
 
             if (pending == null) return false;
 
-            targetOffset = Math.Max(CurrentOffset, pending.Col - visibleColumns + 1);
+            targetOffset = PreferredTargetOffset(pending, visibleColumns, CurrentOffset);
             localCell = new CellKey(pending.Row, pending.Col - targetOffset);
             return localCell.Col >= 0 && localCell.Col < visibleColumns;
         }
@@ -369,8 +455,6 @@ namespace FH6SkillPointOcr
                 {
                     if (c.NewState != FH6AutomationConstants.VehicleState.DriveName || c.Col < CurrentOffset) return false;
                     if (!IsBeforeKnownBoundary(new CellKey(c.Row, c.Col))) return false;
-                    int targetOffsetForCell = Math.Max(CurrentOffset, c.Col - visibleColumns + 1);
-                    CellKey localForCell = new CellKey(c.Row, c.Col - targetOffsetForCell);
                     return !ShouldSkipPlannerCell(new CellKey(c.Row, c.Col));
                 })
                 .OrderBy(c => c.Col * FH6AutomationConstants.Ranking.LeftFirstWeight + c.Row)
@@ -378,7 +462,7 @@ namespace FH6SkillPointOcr
 
             if (pending == null) return false;
 
-            targetOffset = Math.Max(CurrentOffset, pending.Col - visibleColumns + 1);
+            targetOffset = PreferredTargetOffset(pending, visibleColumns, CurrentOffset);
             localCell = new CellKey(pending.Row, pending.Col - targetOffset);
             return localCell.Col >= 0 && localCell.Col < visibleColumns;
         }
@@ -602,6 +686,20 @@ namespace FH6SkillPointOcr
             return true;
         }
 
+        public bool IsTargetModelBoundaryReached(out CellKey lastTarget, out CellKey nextCell)
+        {
+            lastTarget = new CellKey(0, 0);
+            nextCell = new CellKey(0, 0);
+
+            CellKey boundary;
+            if (!TryGetFirstKnownBoundaryZero(out boundary)) return false;
+
+            VirtualVehicleCell last = LastKnownTargetModelCell();
+            lastTarget = last == null ? new CellKey(-1, -1) : new CellKey(last.Row, last.Col);
+            nextCell = boundary;
+            return true;
+        }
+
         public void MarkProcessed(CellKey localCell)
         {
             CellKey global = ToGlobal(localCell);
@@ -616,14 +714,15 @@ namespace FH6SkillPointOcr
             next.Col = global.Col;
             next.IsManufacturer = true;
             next.IsTarget = true;
-            next.NewState = FH6AutomationConstants.VehicleState.None;
+            next.NewState = FH6AutomationConstants.VehicleState.DeletableName;
+            next.PerformanceScore = 600;
             next.LastSeenOffset = CurrentOffset;
             next.SeenCount = cells.TryGetValue(global, out old) ? old.SeenCount + 1 : 1;
-            cells[global] = next;
+            SetCellWithLog(global, next, "PROCESSED", string.Format(CultureInfo.InvariantCulture, "local_row={0} local_col={1}", localCell.Row, localCell.Col));
             EditCount++;
             Log(string.Format(
                 CultureInfo.InvariantCulture,
-                "PROCESSED row={0} col={1} offset={2}",
+                "PROCESSED row={0} col={1} offset={2} state=4",
                 global.Row,
                 global.Col,
                 CurrentOffset));
@@ -657,12 +756,12 @@ namespace FH6SkillPointOcr
                 shifted[new CellKey(next.Row, next.Col)] = next;
             }
 
-            cells.Clear();
+            ClearCellsWithLog("DELETE_SHIFT", string.Format(CultureInfo.InvariantCulture, "deleted_row={0} deleted_col={1}", global.Row, global.Col));
             EnsureReservedFirstCell("delete_shift");
             foreach (KeyValuePair<CellKey, VirtualVehicleCell> pair in shifted)
             {
                 if (IsReservedFirstCell(pair.Key)) continue;
-                cells[pair.Key] = pair.Value;
+                SetCellWithLog(pair.Key, pair.Value, "DELETE_SHIFT_WRITE", string.Format(CultureInfo.InvariantCulture, "deleted_row={0} deleted_col={1}", global.Row, global.Col));
             }
 
             EditCount++;
@@ -674,6 +773,20 @@ namespace FH6SkillPointOcr
                 CurrentOffset,
                 cells.Count));
             Persist("delete_shift");
+        }
+
+        public void AppendPurchasedValidNewVehicles(int count)
+        {
+            if (count <= 0) return;
+
+            int insertOrder = PurchasedVehicleInsertOrderIndex();
+            InsertCellsAtOrderIndex(insertOrder, count, FH6AutomationConstants.VehicleState.ValidNewName, 600, "purchased_valid_new");
+            Log(string.Format(
+                CultureInfo.InvariantCulture,
+                "PURCHASE_APPEND count={0} insert_order={1}",
+                count,
+                insertOrder));
+            Persist("purchase_append");
         }
 
         public CellKey ToGlobal(CellKey local)
@@ -693,12 +806,13 @@ namespace FH6SkillPointOcr
             int state3 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.ValidNew);
             int state4 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.Deletable);
             int state5 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.Drive);
+            int state6 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.Blank);
             int state0 = cells.Values.Count(c => StateCode(c) == FH6AutomationConstants.VehicleState.OtherManufacturerOrUnknown);
             int invalidNew = cells.Values.Count(c => c.NewState == FH6AutomationConstants.VehicleState.InvalidNew);
             int knownEmpty = CountKnownEmptyColumns();
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "虚拟列表: offset={0}, resume={1}, cells={2}, no3Cols={3}, no3Run={4}, skip={5}, 0={6}, 1={7}, 2={8}, 3={9}, 4={10}, 5={11}, invalid={12}, edits={13}",
+                "虚拟列表: offset={0}, resume={1}, cells={2}, no3Cols={3}, no3Run={4}, skip={5}, 0={6}, 1={7}, 2={8}, 3={9}, 4={10}, 5={11}, blank={12}, invalid={13}, edits={14}",
                 CurrentOffset,
                 hasResumeOffset ? ResumeOffset.ToString(CultureInfo.InvariantCulture) : "-",
                 cells.Count,
@@ -711,12 +825,24 @@ namespace FH6SkillPointOcr
                 state3,
                 state4,
                 state5,
+                state6,
                 invalidNew,
                 EditCount);
         }
 
+        public Dictionary<CellKey, int> DebugStateCodes()
+        {
+            Dictionary<CellKey, int> result = new Dictionary<CellKey, int>();
+            foreach (KeyValuePair<CellKey, VirtualVehicleCell> pair in cells)
+            {
+                result[pair.Key] = StateCode(pair.Value);
+            }
+            return result;
+        }
+
         private int StateCode(VirtualVehicleCell cell)
         {
+            if (cell.NewState == FH6AutomationConstants.VehicleState.BlankName) return FH6AutomationConstants.VehicleState.Blank;
             if (cell.NewState == FH6AutomationConstants.VehicleState.DriveName) return FH6AutomationConstants.VehicleState.Drive;
             if (cell.NewState == FH6AutomationConstants.VehicleState.DeletableName) return FH6AutomationConstants.VehicleState.Deletable;
             if (cell.NewState == FH6AutomationConstants.VehicleState.ValidNewName) return FH6AutomationConstants.VehicleState.ValidNew;
@@ -733,12 +859,12 @@ namespace FH6SkillPointOcr
 
         private bool IsReservedFirstCell(CellKey global)
         {
-            return VehicleGridOcrPolicy.IsReservedFirstCell(global);
+            return false;
         }
 
         private bool ShouldSkipPlannerCell(CellKey global)
         {
-            return IsReservedFirstCell(global);
+            return false;
         }
 
         private bool IsBeforeVisibleBoundary(CellKey global, int visibleColumns)
@@ -832,19 +958,27 @@ namespace FH6SkillPointOcr
                    state == FH6AutomationConstants.VehicleState.UnknownOrNonTarget;
         }
 
+        private int PreferredTargetOffset(VirtualVehicleCell cell, int visibleColumns, int minOffset)
+        {
+            int rightAlignedOffset = Math.Max(minOffset, cell.Col - visibleColumns + 1);
+            int observedOffset = Math.Max(0, cell.LastSeenOffset);
+            if (observedOffset >= minOffset && IsCellVisibleAtOffset(cell, observedOffset, visibleColumns))
+            {
+                return observedOffset;
+            }
+
+            return rightAlignedOffset;
+        }
+
+        private bool IsCellVisibleAtOffset(VirtualVehicleCell cell, int offset, int visibleColumns)
+        {
+            int localCol = cell.Col - offset;
+            return localCol >= 0 && localCol < visibleColumns;
+        }
+
         private void EnsureReservedFirstCell(string reason)
         {
-            CellKey key = new CellKey(0, 0);
-            VirtualVehicleCell reserved = new VirtualVehicleCell();
-            reserved.Row = 0;
-            reserved.Col = 0;
-            reserved.IsManufacturer = false;
-            reserved.IsTarget = false;
-            reserved.NewState = FH6AutomationConstants.VehicleState.None;
-            reserved.LastSeenOffset = 0;
-            reserved.SeenCount = 1;
-            cells[key] = reserved;
-            Log("RESERVED_FIRST_CELL " + reason);
+            Log("RESERVED_FIRST_CELL disabled reason=" + reason);
         }
 
         private int OrderIndex(int row, int col)
@@ -1024,9 +1158,125 @@ namespace FH6SkillPointOcr
             clone.IsManufacturer = cell.IsManufacturer;
             clone.IsTarget = cell.IsTarget;
             clone.NewState = cell.NewState;
+            clone.PerformanceScore = cell.PerformanceScore;
             clone.LastSeenOffset = cell.LastSeenOffset;
             clone.SeenCount = cell.SeenCount;
             return clone;
+        }
+
+        private void SetCellWithLog(CellKey key, VirtualVehicleCell next, string action, string detail)
+        {
+            VirtualVehicleCell old;
+            bool hadOld = cells.TryGetValue(key, out old);
+            cells[key] = next;
+            Log(string.Format(
+                CultureInfo.InvariantCulture,
+                "CELL_{0} row={1} col={2} old=[{3}] new=[{4}] offset={5}{6}",
+                action,
+                key.Row,
+                key.Col,
+                hadOld ? FormatCellForLog(old) : "-",
+                FormatCellForLog(next),
+                CurrentOffset,
+                string.IsNullOrEmpty(detail) ? string.Empty : " " + detail));
+        }
+
+        private void ClearCellsWithLog(string action, string detail)
+        {
+            int before = cells.Count;
+            cells.Clear();
+            Log(string.Format(
+                CultureInfo.InvariantCulture,
+                "CELL_CLEAR action={0} before={1} offset={2}{3}",
+                action,
+                before,
+                CurrentOffset,
+                string.IsNullOrEmpty(detail) ? string.Empty : " " + detail));
+        }
+
+        private string FormatCellForLog(VirtualVehicleCell cell)
+        {
+            if (cell == null) return "-";
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "state={0},subaru={1},target={2},new={3},score={4},seen={5},lastOffset={6}",
+                StateCode(cell),
+                cell.IsManufacturer,
+                cell.IsTarget,
+                string.IsNullOrEmpty(cell.NewState) ? FH6AutomationConstants.VehicleState.None : cell.NewState,
+                cell.PerformanceScore,
+                cell.SeenCount,
+                cell.LastSeenOffset);
+        }
+
+        private int PurchasedVehicleInsertOrderIndex()
+        {
+            List<VirtualVehicleCell> targetCells = cells.Values
+                .Where(c =>
+                {
+                    CellKey key = new CellKey(c.Row, c.Col);
+                    return !ShouldSkipPlannerCell(key) && IsTargetModelState(StateCode(c));
+                })
+                .OrderBy(c => OrderIndex(c.Row, c.Col))
+                .ToList();
+
+            if (targetCells.Count == 0) return 1;
+
+            VirtualVehicleCell lastNewOrDelete = targetCells
+                .Where(c => StateCode(c) == FH6AutomationConstants.VehicleState.ValidNew || StateCode(c) == FH6AutomationConstants.VehicleState.Deletable)
+                .OrderByDescending(c => OrderIndex(c.Row, c.Col))
+                .FirstOrDefault();
+            if (lastNewOrDelete != null) return OrderIndex(lastNewOrDelete.Row, lastNewOrDelete.Col) + 1;
+
+            VirtualVehicleCell lastAtOrAbove600 = targetCells
+                .Where(c => c.PerformanceScore >= 600)
+                .OrderByDescending(c => OrderIndex(c.Row, c.Col))
+                .FirstOrDefault();
+            if (lastAtOrAbove600 != null) return OrderIndex(lastAtOrAbove600.Row, lastAtOrAbove600.Col) + 1;
+
+            return OrderIndex(targetCells[0].Row, targetCells[0].Col);
+        }
+
+        private void InsertCellsAtOrderIndex(int insertOrder, int count, string newState, int performanceScore, string reason)
+        {
+            Dictionary<CellKey, VirtualVehicleCell> shifted = new Dictionary<CellKey, VirtualVehicleCell>();
+
+            foreach (VirtualVehicleCell cell in cells.Values)
+            {
+                int index = OrderIndex(cell.Row, cell.Col);
+                VirtualVehicleCell next = CloneCell(cell);
+                if (index >= insertOrder)
+                {
+                    CellKey shiftedKey = CellFromOrderIndex(index + count);
+                    next.Row = shiftedKey.Row;
+                    next.Col = shiftedKey.Col;
+                }
+                shifted[new CellKey(next.Row, next.Col)] = next;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                CellKey key = CellFromOrderIndex(insertOrder + i);
+                VirtualVehicleCell cell = new VirtualVehicleCell();
+                cell.Row = key.Row;
+                cell.Col = key.Col;
+                cell.IsManufacturer = true;
+                cell.IsTarget = true;
+                cell.NewState = newState;
+                cell.PerformanceScore = performanceScore;
+                cell.LastSeenOffset = CurrentOffset;
+                cell.SeenCount = 1;
+                shifted[key] = cell;
+            }
+
+            ClearCellsWithLog("INSERT", string.Format(CultureInfo.InvariantCulture, "insert_order={0} count={1} reason={2}", insertOrder, count, reason));
+            foreach (KeyValuePair<CellKey, VirtualVehicleCell> pair in shifted)
+            {
+                SetCellWithLog(pair.Key, pair.Value, "INSERT_WRITE", string.Format(CultureInfo.InvariantCulture, "insert_order={0} count={1} reason={2}", insertOrder, count, reason));
+            }
+
+            EnsureReservedFirstCell(reason);
+            EditCount += count;
         }
 
         private bool LoadExistingSnapshot()
@@ -1076,6 +1326,10 @@ namespace FH6SkillPointOcr
                     cell.IsTarget = item.TryGetValue("is_target", out isTargetValue) && Convert.ToBoolean(isTargetValue, CultureInfo.InvariantCulture);
                     object newStateValue;
                     cell.NewState = item.TryGetValue("new_state", out newStateValue) ? Convert.ToString(newStateValue, CultureInfo.InvariantCulture) : FH6AutomationConstants.VehicleState.None;
+                    object scoreValue;
+                    cell.PerformanceScore = item.TryGetValue("performance_score", out scoreValue)
+                        ? Convert.ToInt32(scoreValue, CultureInfo.InvariantCulture)
+                        : -1;
 
                     object stateValue;
                     if (item.TryGetValue("state", out stateValue))
@@ -1092,6 +1346,7 @@ namespace FH6SkillPointOcr
                             cell.IsManufacturer = true;
                             cell.IsTarget = true;
                             cell.NewState = FH6AutomationConstants.VehicleState.ValidNewName;
+                            if (cell.PerformanceScore < 0) cell.PerformanceScore = 600;
                         }
                         else if (state == FH6AutomationConstants.VehicleState.Target)
                         {
@@ -1104,6 +1359,11 @@ namespace FH6SkillPointOcr
                             cell.IsManufacturer = true;
                             cell.IsTarget = true;
                             cell.NewState = FH6AutomationConstants.VehicleState.DriveName;
+                            if (cell.PerformanceScore < 0) cell.PerformanceScore = 900;
+                        }
+                        else if (state == FH6AutomationConstants.VehicleState.Blank)
+                        {
+                            cell.NewState = FH6AutomationConstants.VehicleState.BlankName;
                         }
                         else if (state == FH6AutomationConstants.VehicleState.UnknownOrNonTarget)
                         {
@@ -1115,7 +1375,7 @@ namespace FH6SkillPointOcr
                     if (item.TryGetValue("last_seen_offset", out lastSeenValue)) cell.LastSeenOffset = Convert.ToInt32(lastSeenValue, CultureInfo.InvariantCulture);
                     object seenValue;
                     cell.SeenCount = item.TryGetValue("seen_count", out seenValue) ? Convert.ToInt32(seenValue, CultureInfo.InvariantCulture) : 1;
-                    cells[new CellKey(cell.Row, cell.Col)] = cell;
+                    SetCellWithLog(new CellKey(cell.Row, cell.Col), cell, "LOAD_EXISTING_CELL", "snapshot");
                 }
 
                 Log(string.Format(CultureInfo.InvariantCulture, "LOAD_EXISTING cells={0} offset={1} resume={2}", cells.Count, CurrentOffset, hasResumeOffset ? ResumeOffset.ToString(CultureInfo.InvariantCulture) : "-"));
@@ -1130,7 +1390,7 @@ namespace FH6SkillPointOcr
 
         private void ClearInMemoryState()
         {
-            cells.Clear();
+            ClearCellsWithLog("CLEAR_IN_MEMORY", string.Empty);
             hasResumeOffset = false;
             CurrentOffset = 0;
             ResumeOffset = 0;
@@ -1165,7 +1425,7 @@ namespace FH6SkillPointOcr
                 root["edit_count"] = EditCount;
                 root["last_known_empty_run"] = LastKnownEmptyRun;
                 root["last_suggested_skip"] = LastSuggestedSkip;
-                root["state_codes"] = "0=非斯巴鲁或未确认制造商, 1=斯巴鲁但非目标车, 2=目标车但没有有效全新, 3=目标车且有有效全新, 4=可删车辆, 5=用来开刷技术点蓝图的车辆";
+                root["state_codes"] = "-1=空格, 0=其他厂商, 1=斯巴鲁的车, 2=指定型号, 3=指定型号&600&全新, 4=指定型号&600&非全新, 5=指定型号&900";
 
                 List<Dictionary<string, object>> items = new List<Dictionary<string, object>>();
                 foreach (VirtualVehicleCell cell in cells.Values.OrderBy(c => c.Col).ThenBy(c => c.Row))
@@ -1178,6 +1438,7 @@ namespace FH6SkillPointOcr
                     item["is_manufacturer"] = cell.IsManufacturer;
                     item["is_target"] = cell.IsTarget;
                     item["new_state"] = cell.NewState ?? FH6AutomationConstants.VehicleState.None;
+                    item["performance_score"] = cell.PerformanceScore;
                     item["last_seen_offset"] = cell.LastSeenOffset;
                     item["seen_count"] = cell.SeenCount;
                     items.Add(item);
@@ -1221,6 +1482,7 @@ namespace FH6SkillPointOcr
         public bool IsTarget;
         public bool IsManufacturer;
         public string NewState;
+        public int PerformanceScore = -1;
         public int LastSeenOffset;
         public int SeenCount;
     }

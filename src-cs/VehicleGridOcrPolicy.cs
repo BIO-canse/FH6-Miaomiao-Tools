@@ -6,12 +6,11 @@ namespace FH6SkillPointOcr
     {
         public static bool IsReservedFirstCell(CellKey global)
         {
-            return global.Row == 0 && global.Col == 0;
+            return false;
         }
 
         public static bool ShouldSkipOcrWrite(CellKey global, bool globalAlreadyKnown)
         {
-            if (IsReservedFirstCell(global)) return true;
             return globalAlreadyKnown;
         }
     }

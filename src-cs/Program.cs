@@ -35,6 +35,7 @@ namespace FH6SkillPointOcr
             try
             {
                 Config config = Config.Load(options.ConfigPath);
+                EmergencyStopWatcherLauncher.Start(config.BaseDir);
                 if (options.NoOverlay)
                 {
                     config.OverlayEnabled = false;
@@ -66,6 +67,7 @@ namespace FH6SkillPointOcr
             catch (StopRequestedException)
             {
                 Console.WriteLine("[EXIT] Space+C");
+                EmergencyStop.KillAutomationProcesses(AppDomain.CurrentDomain.BaseDirectory);
                 return 0;
             }
             catch (CompletedException ex)
@@ -98,7 +100,7 @@ namespace FH6SkillPointOcr
 
         private static VirtualListLoadMode ResolveVirtualListLoadMode(AutomationTask task, CliOptions options)
         {
-            if (task != AutomationTask.DeleteVehicles) return VirtualListLoadMode.None;
+            if (task != AutomationTask.DeleteVehicles && task != AutomationTask.SkillPoints) return VirtualListLoadMode.None;
             return options.ReuseVehicleListState ? VirtualListLoadMode.FullState : VirtualListLoadMode.None;
         }
 
@@ -111,7 +113,7 @@ namespace FH6SkillPointOcr
             }
             if (options.ReuseVehicleListState)
             {
-                Console.WriteLine("[STARTUP] 点技能衔接启动：技术点默认 " + FH6AutomationConstants.SkillPoints.Max + "，不读取旧虚拟列表内部状态。");
+                Console.WriteLine("[STARTUP] 点技能衔接启动：技术点默认 " + FH6AutomationConstants.SkillPoints.Max + "，读取建表/衔接虚拟列表状态。");
                 return FH6AutomationConstants.SkillPoints.Max;
             }
             while (true)

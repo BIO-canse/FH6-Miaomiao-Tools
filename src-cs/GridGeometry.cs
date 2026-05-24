@@ -100,6 +100,11 @@ namespace FH6SkillPointOcr
             return true;
         }
 
+        public List<CellKey> AllCellKeys()
+        {
+            return cells.Keys.OrderBy(c => c.Col).ThenBy(c => c.Row).ToList();
+        }
+
         public List<CellView> CellViews(HashSet<CellKey> targets, HashSet<CellKey> validNew, HashSet<CellKey> invalidNew, CellKey? chosen)
         {
             return CellViews(targets, validNew, invalidNew, new HashSet<CellKey>(), new HashSet<CellKey>(), chosen);

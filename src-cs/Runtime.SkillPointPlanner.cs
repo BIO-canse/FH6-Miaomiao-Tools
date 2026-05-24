@@ -63,39 +63,21 @@ namespace FH6SkillPointOcr
 
         private SkillPointSearchDecision PlanSkillPointSearch()
         {
-            CellKey target;
-            if (vehicleList.TryGetVisiblePendingValidNew(grid.VisibleColumns, out target))
+            CellKey targetGlobal;
+            if (vehicleList.TryGetPendingValidNewGlobalTarget(out targetGlobal))
             {
-                return SkillPointSearchDecision.Select(target, "当前可见范围已有状态 3");
+                return SkillPointSearchDecision.Select(targetGlobal, "虚拟表内已有状态 3，进入工作分支生成键盘路径");
             }
 
-            if (!vehicleList.IsVisibleSearchRangeObserved(grid.VisibleColumns))
+            if (UseTableOnlyVehicleSearch())
             {
-                return SkillPointSearchDecision.Observe("当前可见目标段还有未知格子");
-            }
-
-            if (VisibleHasOtherManufacturerOrUnknown())
-            {
-                return SkillPointSearchDecision.StopWithReset(
-                    "当前页已经出现目标车型完成边界",
-                    "当前页已确认目标车型区间末尾后面是 0 或 1，后面不会再有可点技术点车辆。");
-            }
-
-            CellKey knownTarget;
-            int targetOffset;
-            if (vehicleList.TryGetPendingValidNewTargetAtOrAfterCurrent(grid.VisibleColumns, out knownTarget, out targetOffset))
-            {
-                int delta = targetOffset - vehicleList.CurrentOffset;
-                if (delta > 0)
+                if (vehicleList.HasPendingValidNew)
                 {
-                    return SkillPointSearchDecision.Scroll(
-                        delta,
-                        string.Format(
-                            CultureInfo.InvariantCulture,
-                            "虚拟表后方已有状态 3，滚动 {0} 格到 offset={1}",
-                            delta,
-                            targetOffset));
+                    return SkillPointSearchDecision.Observe("定表内仍有状态 3，但当前 offset 后方没有状态 3，可能已经滚过目标");
                 }
+                return SkillPointSearchDecision.StopWithReset(
+                    "定表虚拟列表内没有状态 3",
+                    "定表虚拟列表内没有状态 3，可点技术点车辆已处理完。");
             }
 
             if (IsCompletionBoundaryReached())
@@ -110,6 +92,11 @@ namespace FH6SkillPointOcr
                 return SkillPointSearchDecision.Scroll(
                     1,
                     subaruListBoundaryReason + "，但还没有形成目标车型完成边界，继续滚动确认。");
+            }
+
+            if (!vehicleList.IsVisibleSearchRangeObserved(grid.VisibleColumns))
+            {
+                return SkillPointSearchDecision.Observe("当前可见目标段还有未知格子");
             }
 
             int skip;
@@ -132,12 +119,11 @@ namespace FH6SkillPointOcr
             SetOcrSummary("虚拟列表: " + reason + "，直接处理，不 OCR");
             lastTargetSummary = string.Format(
                 CultureInfo.InvariantCulture,
-                "目标格: col={0}, row={1}（虚拟列表 3）",
+                "目标格: global_col={0}, row={1}（虚拟列表 3）",
                 target.Col,
                 target.Row);
-            RememberVehicleResumeOffset();
-            UpdateOverlay(null, null, null, target);
-            Console.WriteLine("[TARGET] planned row={0} col={1}", target.Row, target.Col);
+            UpdateOverlay(null, null, null, VisibleLocalFromGlobal(target));
+            Console.WriteLine("[TARGET] planned global row={0} col={1}", target.Row, target.Col);
         }
     }
 }

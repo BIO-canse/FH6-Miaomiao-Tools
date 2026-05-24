@@ -8,12 +8,13 @@ internal static class EnterTapLoop
     private const int ExitVirtualKey = FH6AutomationConstants.Keys.ExitVirtualKey;
     private const int HotkeyModifierVirtualKey = FH6AutomationConstants.Keys.HotkeyModifierVirtualKey;
     private const ushort KeyEnter = FH6AutomationConstants.Keys.Enter;
+    private const ushort KeyUp = FH6AutomationConstants.Keys.Up;
 
     private static void Main()
     {
         Console.Title = "EnterTapLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");
-        Console.WriteLine("启动后先等待 10 秒，然后循环按 Enter 0.1 秒，等待 0.1 秒。");
+        Console.WriteLine("启动后先等待 10 秒，然后循环：Up、Up、Enter，每次按下 0.1 秒，间隔 0.1 秒。");
         Console.WriteLine("按 Space+C 退出。请在第一次 10 秒等待内切到目标窗口。");
 
         if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.StartupDelayMs)))
@@ -24,12 +25,12 @@ internal static class EnterTapLoop
 
         while (!ExitRequested())
         {
-            TapEnter();
-
-            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs)))
-            {
-                break;
-            }
+            if (!TapKey(KeyUp)) break;
+            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs))) break;
+            if (!TapKey(KeyUp)) break;
+            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs))) break;
+            if (!TapKey(KeyEnter)) break;
+            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs))) break;
         }
 
         Console.WriteLine("已退出。");
@@ -61,11 +62,17 @@ internal static class EnterTapLoop
         return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     }
 
-    private static void TapEnter()
+    private static bool TapKey(ushort virtualKey)
     {
-        SendKeyboardInput(KeyEnter, false);
-        WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TapMs));
-        SendKeyboardInput(KeyEnter, true);
+        if (ExitRequested()) return false;
+        SendKeyboardInput(virtualKey, false);
+        if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TapMs)))
+        {
+            SendKeyboardInput(virtualKey, true);
+            return false;
+        }
+        SendKeyboardInput(virtualKey, true);
+        return true;
     }
 
     private static void SendKeyboardInput(ushort virtualKey, bool keyUp)

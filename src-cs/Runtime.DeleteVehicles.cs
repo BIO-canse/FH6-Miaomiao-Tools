@@ -29,16 +29,16 @@ namespace FH6SkillPointOcr
 
             SetStage("查找可删车辆");
             CellKey target = FindDeletableVehicleCell();
-            MoveDeleteSelectionToCell(target);
+            CellKey selectedTarget = MoveDeleteSelectionToCell(target);
             SetStage("执行删车固定序列");
             RunDeleteVehicleSequence();
-            MarkVehicleCellDeleted(target);
+            MarkVehicleCellDeleted(selectedTarget);
             ResetDeleteSelectionToFirstCell();
         }
 
         private CellKey FindDeletableVehicleCell()
         {
-            SetStatus("find deletable vehicle", "按虚拟表规划下一步：选择、滚动、OCR 或停止");
+            SetStatus("find deletable vehicle", UseTableOnlyVehicleSearch() ? "按定表虚拟列表规划下一步：选择、滚动或停止，不 OCR" : "按虚拟表规划下一步：选择、滚动、OCR 或停止");
             OcrSnapshot last = null;
             for (int i = 0; i < config.MaxFindNewScrolls; i++)
             {
@@ -59,6 +59,11 @@ namespace FH6SkillPointOcr
                     SetOcrSummary("虚拟列表: " + decision.Reason);
                     ScrollVehicleListDown(decision.ScrollTicks, "find deletable vehicle");
                     continue;
+                }
+
+                if (UseTableOnlyVehicleSearch())
+                {
+                    FailTableOnlyVehicleSearch("delete", decision.Reason);
                 }
 
                 DebugGate("find deletable vehicle", "OCR 车型，第 " + (i + 1) + " 次：" + decision.Reason);
@@ -103,40 +108,45 @@ namespace FH6SkillPointOcr
             UpdateOverlay(null, null, null, null, deleteSelection);
         }
 
-        private void MoveDeleteSelectionToCell(CellKey target)
+        private CellKey MoveDeleteSelectionToCell(CellKey targetGlobal)
         {
-            MoveDeleteSelectionToCell(target, FH6AutomationConstants.Timing.OneSecondMs);
+            return MoveDeleteSelectionToCell(targetGlobal, FH6AutomationConstants.Timing.OneSecondMs);
         }
 
-        private void MoveDeleteSelectionToCell(CellKey target, int postEnterWaitMs)
+        private CellKey MoveDeleteSelectionToCell(CellKey targetGlobal, int postEnterWaitMs)
         {
-            MoveDeleteSelectionToCell(target, postEnterWaitMs, true, "可删格");
+            return MoveDeleteSelectionToCell(targetGlobal, postEnterWaitMs, true, "可删格");
         }
 
-        private void MoveDeleteSelectionToCell(CellKey target, int postEnterWaitMs, bool moveMouseAfterSelect, string targetLabel)
+        private CellKey MoveDeleteSelectionToCell(CellKey targetGlobal, int postEnterWaitMs, bool moveMouseAfterSelect, string targetLabel)
         {
-            if (target.Row < 0 || target.Row >= config.GridRows || target.Col < 0) throw new InvalidOperationException("目标格子越界");
+            if (targetGlobal.Row < 0 || targetGlobal.Row >= config.GridRows || targetGlobal.Col < 0) throw new InvalidOperationException("目标格子越界");
 
             CellKey start = deleteSelectionKnown ? deleteSelection : new CellKey(0, 0);
-            int dx = target.Col - start.Col;
-            int dy = target.Row - start.Row;
-            lastTargetSummary = string.Format("{0}: col={1}, row={2}", targetLabel, target.Col, target.Row);
+            int dx = targetGlobal.Col - vehicleList.CurrentOffset;
+            int dy = targetGlobal.Row - start.Row;
+            lastTargetSummary = string.Format("{0}: global_col={1}, row={2}", targetLabel, targetGlobal.Col, targetGlobal.Row);
             DebugGate(
-                "move delete selection row=" + target.Row + " col=" + target.Col,
-                string.Format("从 col={0}, row={1} 移动到 col={2}, row={3}, Enter", start.Col, start.Row, target.Col, target.Row));
+                "move delete selection global row=" + targetGlobal.Row + " col=" + targetGlobal.Col,
+                string.Format(
+                    "{0} x{1}, 从 row={2} 移动到 row={3}, Enter",
+                    dx >= 0 ? "Right" : "Left",
+                    Math.Abs(dx),
+                    start.Row,
+                    targetGlobal.Row));
 
-            string horizontal = dx >= 0 ? "RIGHT" : "LEFT";
-            for (int i = 0; i < Math.Abs(dx); i++) input.Tap(horizontal);
-
+            MoveVehicleListViewByKeyboard(dx, targetLabel + " target path");
             string vertical = dy >= 0 ? "DOWN" : "UP";
             for (int i = 0; i < Math.Abs(dy); i++) input.Tap(vertical);
 
+            CellKey selectedLocal = new CellKey(targetGlobal.Row, 0);
             input.Tap("ENTER");
             input.SleepMs(postEnterWaitMs);
-            deleteSelection = target;
+            deleteSelection = selectedLocal;
             deleteSelectionKnown = true;
-            UpdateOverlay(null, null, null, null, target);
+            UpdateOverlay(null, null, null, null, selectedLocal);
             if (moveMouseAfterSelect) MoveMouseToFirstVisibleCellCenter("idle in vehicle list after selecting delete target");
+            return selectedLocal;
         }
     }
 }
