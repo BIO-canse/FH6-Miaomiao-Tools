@@ -1,2 +1,13 @@
 bin/
 *.exe
+bin-verify/
+debug/
+state/
+runtime/paddleocr-cache/
+runtime/paddleocr-models/
+runtime/paddleocr-py/
+runtime/rapidocr-py/
+runtime/tesseract/
+config/user-settings.json
+config/manufacturer-nav.json
+*.log

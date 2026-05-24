@@ -1,21 +1,22 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using FH6AutomationShared;
 
 internal static class EnterTapLoop
 {
-    private const int ExitVirtualKey = 0x43; // C
-    private const int AltVirtualKey = 0x12;
-    private const ushort KeyEnter = 0x0D;
+    private const int ExitVirtualKey = FH6AutomationConstants.Keys.ExitVirtualKey;
+    private const int HotkeyModifierVirtualKey = FH6AutomationConstants.Keys.HotkeyModifierVirtualKey;
+    private const ushort KeyEnter = FH6AutomationConstants.Keys.Enter;
 
     private static void Main()
     {
-        Console.Title = "EnterTapLoop - Alt+C 退出";
+        Console.Title = "EnterTapLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");
         Console.WriteLine("启动后先等待 10 秒，然后循环按 Enter 0.1 秒，等待 0.1 秒。");
-        Console.WriteLine("按 Alt+C 退出。请在第一次 10 秒等待内切到目标窗口。");
+        Console.WriteLine("按 Space+C 退出。请在第一次 10 秒等待内切到目标窗口。");
 
-        if (!WaitOrExit(TimeSpan.FromSeconds(10)))
+        if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.StartupDelayMs)))
         {
             Console.WriteLine("已退出。");
             return;
@@ -25,7 +26,7 @@ internal static class EnterTapLoop
         {
             TapEnter();
 
-            if (!WaitOrExit(TimeSpan.FromMilliseconds(100)))
+            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs)))
             {
                 break;
             }
@@ -52,7 +53,7 @@ internal static class EnterTapLoop
 
     private static bool ExitRequested()
     {
-        return IsKeyDown(AltVirtualKey) && IsKeyDown(ExitVirtualKey);
+        return IsKeyDown(HotkeyModifierVirtualKey) && IsKeyDown(ExitVirtualKey);
     }
 
     private static bool IsKeyDown(int virtualKey)
@@ -63,7 +64,7 @@ internal static class EnterTapLoop
     private static void TapEnter()
     {
         SendKeyboardInput(KeyEnter, false);
-        WaitOrExit(TimeSpan.FromMilliseconds(100));
+        WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TapMs));
         SendKeyboardInput(KeyEnter, true);
     }
 

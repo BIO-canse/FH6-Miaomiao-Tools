@@ -1,30 +1,31 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using FH6AutomationShared;
 
 internal static class Program
 {
-    private const int ExitVirtualKey = 0x43; // C
-    private const int AltVirtualKey = 0x12;
-    private const ushort KeyW = 0x57;
-    private const ushort KeyD = 0x44;
-    private const ushort KeyX = 0x58;
+    private const int ExitVirtualKey = FH6AutomationConstants.Keys.ExitVirtualKey;
+    private const int HotkeyModifierVirtualKey = FH6AutomationConstants.Keys.HotkeyModifierVirtualKey;
+    private const ushort KeyW = FH6AutomationConstants.Keys.W;
+    private const ushort KeyD = FH6AutomationConstants.Keys.D;
+    private const ushort KeyX = FH6AutomationConstants.Keys.X;
     private static readonly object InputLock = new object();
 
     private static void Main()
     {
-        Console.Title = "AutoInputLoop - Alt+C 退出";
+        Console.Title = "AutoInputLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");
         Console.WriteLine("每 10 秒依次执行：鼠标左键点击一次、W 按下 0.1 秒、D 按下 0.1 秒。");
         Console.WriteLine("另有一个独立循环：启动等待 10 秒后，每 5 秒按 X 0.1 秒。");
-        Console.WriteLine("按 Alt+C 退出。请在第一次 10 秒等待内切到目标窗口。");
+        Console.WriteLine("按 Space+C 退出。请在第一次 10 秒等待内切到目标窗口。");
 
         Thread xLoopThread = new Thread(RunXLoop);
         xLoopThread.Start();
 
         while (!ExitRequested())
         {
-            if (!WaitOrExit(TimeSpan.FromSeconds(10)))
+            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TenSecondsMs)))
             {
                 break;
             }
@@ -32,20 +33,20 @@ internal static class Program
             ClickLeftMouse();
             Console.WriteLine("{0:HH:mm:ss} 已点击鼠标左键", DateTime.Now);
 
-            if (!WaitOrExit(TimeSpan.FromSeconds(10)))
+            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TenSecondsMs)))
             {
                 break;
             }
 
-            PressKey(KeyW, TimeSpan.FromMilliseconds(100));
+            PressKey(KeyW, TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TapMs));
             Console.WriteLine("{0:HH:mm:ss} 已按 W", DateTime.Now);
 
-            if (!WaitOrExit(TimeSpan.FromSeconds(10)))
+            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TenSecondsMs)))
             {
                 break;
             }
 
-            PressKey(KeyD, TimeSpan.FromMilliseconds(100));
+            PressKey(KeyD, TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TapMs));
             Console.WriteLine("{0:HH:mm:ss} 已按 D", DateTime.Now);
         }
 
@@ -55,14 +56,14 @@ internal static class Program
 
     private static void RunXLoop()
     {
-        if (!WaitOrExit(TimeSpan.FromSeconds(10)))
+        if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TenSecondsMs)))
         {
             return;
         }
 
         while (!ExitRequested())
         {
-            PressKey(KeyX, TimeSpan.FromMilliseconds(100));
+            PressKey(KeyX, TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TapMs));
             Console.WriteLine("{0:HH:mm:ss} 已按 X", DateTime.Now);
 
             if (!WaitOrExit(TimeSpan.FromSeconds(5)))
@@ -90,7 +91,7 @@ internal static class Program
 
     private static bool ExitRequested()
     {
-        return IsKeyDown(AltVirtualKey) && IsKeyDown(ExitVirtualKey);
+        return IsKeyDown(HotkeyModifierVirtualKey) && IsKeyDown(ExitVirtualKey);
     }
 
     private static bool IsKeyDown(int virtualKey)
@@ -103,7 +104,7 @@ internal static class Program
         lock (InputLock)
         {
             SendMouseInput(MouseEventFlags.LeftDown);
-            Thread.Sleep(50);
+            Thread.Sleep(FH6AutomationConstants.Timing.ShortMouseClickMs);
             SendMouseInput(MouseEventFlags.LeftUp);
         }
     }

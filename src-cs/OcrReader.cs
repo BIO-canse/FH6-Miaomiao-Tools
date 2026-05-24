@@ -1,0 +1,759 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Web.Script.Serialization;
+using System.Windows.Forms;
+
+namespace FH6SkillPointOcr
+{
+    internal sealed class OcrReader : IDisposable
+    {
+        private readonly Config config;
+        private readonly bool usePaddleOcr;
+        private readonly bool useRapidOcr;
+        private readonly JavaScriptSerializer jsonSerializer = new JavaScriptSerializer();
+        private readonly string tesseractPath;
+        private readonly string tesseractDir;
+        private readonly string tempDir;
+        private readonly string paddleOcrPython;
+        private readonly string paddleOcrBridge;
+        private readonly string rapidOcrPython;
+        private readonly string rapidOcrBridge;
+        private readonly string debugImageDir;
+        private Process paddleOcrProcess;
+        private Process rapidOcrProcess;
+        private readonly StringBuilder paddleOcrErrors = new StringBuilder();
+        private readonly StringBuilder rapidOcrErrors = new StringBuilder();
+
+        public OcrReader(Config config, string debugImageDir)
+        {
+            this.config = config;
+            this.debugImageDir = debugImageDir;
+            jsonSerializer.MaxJsonLength = int.MaxValue;
+            usePaddleOcr = string.Equals(config.OcrEngine, "paddleocr", StringComparison.OrdinalIgnoreCase);
+            useRapidOcr = string.Equals(config.OcrEngine, "rapidocr", StringComparison.OrdinalIgnoreCase);
+            paddleOcrPython = ResolvePython(config, config.PaddleOcrPython, "FH6_PADDLEOCR_PYTHON");
+            paddleOcrBridge = config.ResolvePath(config.PaddleOcrBridge);
+            rapidOcrPython = ResolvePython(config, config.RapidOcrPython, "FH6_RAPIDOCR_PYTHON");
+            rapidOcrBridge = config.ResolvePath(config.RapidOcrBridge);
+            tesseractPath = config.ResolvePath(config.TesseractCmd);
+            tesseractDir = Path.GetDirectoryName(tesseractPath);
+            if (usePaddleOcr)
+            {
+                if (!File.Exists(paddleOcrPython)) throw new FileNotFoundException("找不到 PaddleOCR Python", paddleOcrPython);
+                if (!File.Exists(paddleOcrBridge)) throw new FileNotFoundException("找不到 PaddleOCR bridge", paddleOcrBridge);
+            }
+            else if (useRapidOcr)
+            {
+                if (!File.Exists(rapidOcrPython)) throw new FileNotFoundException("找不到 RapidOCR Python", rapidOcrPython);
+                if (!File.Exists(rapidOcrBridge)) throw new FileNotFoundException("找不到 RapidOCR bridge", rapidOcrBridge);
+            }
+            else if (!File.Exists(tesseractPath))
+            {
+                throw new FileNotFoundException("找不到 tesseract.exe", tesseractPath);
+            }
+            tempDir = Path.Combine(Path.GetTempPath(), "FH6SkillPointOcr", "ocr-temp");
+            Directory.CreateDirectory(tempDir);
+            if (!string.IsNullOrWhiteSpace(debugImageDir)) Directory.CreateDirectory(debugImageDir);
+        }
+
+        public OcrSnapshot Read(Screenshot screenshot)
+        {
+            return Read(screenshot, config.OcrPsm, null);
+        }
+
+        public OcrSnapshot Read(Screenshot screenshot, int psm)
+        {
+            return Read(screenshot, psm, null);
+        }
+
+        public OcrSnapshot Read(Screenshot screenshot, int psm, string debugLabel)
+        {
+            if (usePaddleOcr) return ReadPaddleOcr(screenshot, debugLabel);
+            if (useRapidOcr) return ReadRapidOcr(screenshot, debugLabel);
+            return ReadTesseract(screenshot, psm, debugLabel);
+        }
+
+        private OcrSnapshot ReadTesseract(Screenshot screenshot, int psm, string debugLabel)
+        {
+            string tempImage = Path.Combine(tempDir, "ocr-" + Guid.NewGuid().ToString("N") + ".png");
+            try
+            {
+                using (Bitmap processed = Preprocess(screenshot.Image))
+                {
+                    SaveDebugImage(processed, debugLabel, "ocr-input");
+                    processed.Save(tempImage, ImageFormat.Png);
+                }
+
+                string tsv = RunTesseract(tempImage, psm);
+                OcrSnapshot snapshot = ParseTsv(tsv, screenshot);
+                return snapshot;
+            }
+            finally
+            {
+                try { if (File.Exists(tempImage)) File.Delete(tempImage); } catch { }
+            }
+        }
+
+        private OcrSnapshot ReadPaddleOcr(Screenshot screenshot, string debugLabel)
+        {
+            EnsurePaddleOcrProcess();
+            string imageBase64 = EncodeOcrImage(screenshot, debugLabel);
+            paddleOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + imageBase64 + "\"}");
+            paddleOcrProcess.StandardInput.Flush();
+
+            string line = paddleOcrProcess.StandardOutput.ReadLine();
+            if (line == null)
+            {
+                throw new InvalidOperationException("PaddleOCR 进程没有返回结果。" + PaddleOcrErrorSuffix());
+            }
+
+            SaveDebugText(debugLabel, "ocr-response", line);
+            return ParseOcrJson(line, screenshot, "PaddleOCR", PaddleOcrErrorSuffix());
+        }
+
+        private OcrSnapshot ReadRapidOcr(Screenshot screenshot, string debugLabel)
+        {
+            EnsureRapidOcrProcess();
+            string imageBase64 = EncodeOcrImage(screenshot, debugLabel);
+            rapidOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + imageBase64 + "\"}");
+            rapidOcrProcess.StandardInput.Flush();
+
+            string line = rapidOcrProcess.StandardOutput.ReadLine();
+            if (line == null)
+            {
+                throw new InvalidOperationException("RapidOCR 进程没有返回结果。" + RapidOcrErrorSuffix());
+            }
+
+            SaveDebugText(debugLabel, "ocr-response", line);
+            return ParseOcrJson(line, screenshot, "RapidOCR", RapidOcrErrorSuffix());
+        }
+
+        private string EncodeOcrImage(Screenshot screenshot, string debugLabel)
+        {
+            string imageBase64;
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (Bitmap processed = PreprocessBridgeOcr(screenshot.Image))
+                {
+                    SaveDebugImage(processed, debugLabel, "ocr-input");
+                    processed.Save(ms, ImageFormat.Png);
+                }
+                imageBase64 = Convert.ToBase64String(ms.ToArray());
+            }
+            return imageBase64;
+        }
+
+        private void SaveDebugImage(Bitmap image, string debugLabel, string suffix)
+        {
+            if (string.IsNullOrWhiteSpace(debugImageDir) || string.IsNullOrWhiteSpace(debugLabel) || image == null) return;
+            try
+            {
+                Directory.CreateDirectory(debugImageDir);
+                image.Save(Path.Combine(debugImageDir, debugLabel + "-" + suffix + ".png"), ImageFormat.Png);
+            }
+            catch
+            {
+            }
+        }
+
+        private void SaveDebugText(string debugLabel, string suffix, string body)
+        {
+            if (string.IsNullOrWhiteSpace(debugImageDir) || string.IsNullOrWhiteSpace(debugLabel)) return;
+            try
+            {
+                Directory.CreateDirectory(debugImageDir);
+                File.WriteAllText(Path.Combine(debugImageDir, debugLabel + "-" + suffix + ".json"), body ?? "", Encoding.UTF8);
+            }
+            catch
+            {
+            }
+        }
+
+        public List<OcrMatch> Find(OcrSnapshot snapshot, string query)
+        {
+            List<OcrMatch> phrase = FindPhrase(snapshot.WordLines, query);
+            if (phrase.Count > 0) return phrase;
+
+            if (HasCjk(query))
+            {
+                string needle = NormalizeCjk(query);
+                return PreferExactOrCompact(
+                    snapshot.Lines.Where(line => NormalizeCjk(line.Text).Contains(needle)).ToList(),
+                    needle,
+                    true);
+            }
+            else
+            {
+                string needle = NormalizeLatin(query);
+                return PreferExactOrCompact(
+                    snapshot.Lines.Where(line => NormalizeLatin(line.Text).Contains(needle)).ToList(),
+                    needle,
+                    false);
+            }
+        }
+
+        public List<OcrMatch> FindCjkFuzzy(OcrSnapshot snapshot, string query, int minCommonChars, int maxNormalizedLength)
+        {
+            string needle = NormalizeCjk(query);
+            List<OcrMatch> candidates = new List<OcrMatch>();
+            candidates.AddRange(snapshot.Words);
+            candidates.AddRange(snapshot.Lines);
+
+            List<OcrMatch> matches = new List<OcrMatch>();
+            foreach (OcrMatch candidate in candidates)
+            {
+                string haystack = NormalizeCjk(candidate.Text);
+                if (haystack.Length == 0 || haystack.Length > maxNormalizedLength) continue;
+                if (haystack.Contains(needle) || needle.Contains(haystack))
+                {
+                    matches.Add(candidate);
+                    continue;
+                }
+
+                if (CommonCharCount(needle, haystack) >= minCommonChars)
+                {
+                    matches.Add(candidate);
+                }
+            }
+
+            return PreferExactOrCompact(matches, needle, true);
+        }
+
+        public List<OcrMatch> FindLatinFuzzy(OcrSnapshot snapshot, string query, int maxDistance)
+        {
+            string needle = NormalizeLatin(query);
+            if (needle.Length == 0) return new List<OcrMatch>();
+
+            List<OcrMatch> candidates = new List<OcrMatch>();
+            candidates.AddRange(snapshot.Words);
+            candidates.AddRange(snapshot.Lines);
+
+            List<OcrMatch> matches = new List<OcrMatch>();
+            foreach (OcrMatch candidate in candidates)
+            {
+                string haystack = NormalizeLatin(candidate.Text);
+                if (haystack.Length == 0) continue;
+                if (haystack.Contains(needle) || FuzzyContains(haystack, needle, maxDistance))
+                {
+                    matches.Add(candidate);
+                }
+            }
+
+            return PreferExactOrCompact(matches, needle, false);
+        }
+
+        private Bitmap Preprocess(Bitmap source)
+        {
+            int width = Math.Max(1, (int)Math.Round(source.Width * config.OcrScale));
+            int height = Math.Max(1, (int)Math.Round(source.Height * config.OcrScale));
+            Bitmap result = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            float contrast = 1.8f;
+            float translate = 0.5f * (1.0f - contrast);
+            ColorMatrix matrix = new ColorMatrix(new[]
+            {
+                new[] {0.299f * contrast, 0.299f * contrast, 0.299f * contrast, 0, 0},
+                new[] {0.587f * contrast, 0.587f * contrast, 0.587f * contrast, 0, 0},
+                new[] {0.114f * contrast, 0.114f * contrast, 0.114f * contrast, 0, 0},
+                new[] {0f, 0f, 0f, 1f, 0f},
+                new[] {translate, translate, translate, 0f, 1f}
+            });
+            using (Graphics g = Graphics.FromImage(result))
+            using (ImageAttributes attributes = new ImageAttributes())
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                attributes.SetColorMatrix(matrix);
+                g.DrawImage(
+                    source,
+                    new Rectangle(0, 0, width, height),
+                    0,
+                    0,
+                    source.Width,
+                    source.Height,
+                    GraphicsUnit.Pixel,
+                    attributes);
+            }
+            return result;
+        }
+
+        private Bitmap PreprocessBridgeOcr(Bitmap source)
+        {
+            double scale = Math.Max(1.0, config.OcrScale);
+            int width = Math.Max(1, (int)Math.Round(source.Width * scale));
+            int height = Math.Max(1, (int)Math.Round(source.Height * scale));
+            Bitmap result = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            using (Graphics g = Graphics.FromImage(result))
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.DrawImage(source, new Rectangle(0, 0, width, height));
+            }
+            return result;
+        }
+
+        private string RunTesseract(string imagePath, int psm)
+        {
+            ProcessStartInfo psi = new ProcessStartInfo();
+            psi.FileName = tesseractPath;
+            psi.WorkingDirectory = tesseractDir;
+            psi.Arguments = "\"" + imagePath + "\" stdout --tessdata-dir tessdata -l " + config.OcrLanguages + " --psm " + psm + " tsv";
+            psi.UseShellExecute = false;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            psi.CreateNoWindow = true;
+            psi.StandardOutputEncoding = Encoding.UTF8;
+            psi.StandardErrorEncoding = Encoding.UTF8;
+            psi.EnvironmentVariables["TESSDATA_PREFIX"] = "tessdata";
+            using (Process process = Process.Start(psi))
+            {
+                string stdout = process.StandardOutput.ReadToEnd();
+                string stderr = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+                if (process.ExitCode != 0) throw new InvalidOperationException("Tesseract 执行失败：" + stderr);
+                return stdout;
+            }
+        }
+
+        private OcrSnapshot ParseTsv(string tsv, Screenshot screenshot)
+        {
+            Dictionary<string, List<OcrMatch>> grouped = new Dictionary<string, List<OcrMatch>>();
+            List<OcrMatch> words = new List<OcrMatch>();
+            string[] lines = tsv.Replace("\r\n", "\n").Split('\n');
+            for (int i = 1; i < lines.Length; i++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[i])) continue;
+                string[] parts = lines[i].Split('\t');
+                if (parts.Length < 12) continue;
+                string text = parts[11].Trim();
+                if (text.Length == 0) continue;
+                double conf = ParseDouble(parts[10], -1);
+                if (conf >= 0 && conf < config.OcrMinConfidence) continue;
+
+                double left = ParseDouble(parts[6], 0) / config.OcrScale + screenshot.Left;
+                double top = ParseDouble(parts[7], 0) / config.OcrScale + screenshot.Top;
+                double right = left + ParseDouble(parts[8], 0) / config.OcrScale;
+                double bottom = top + ParseDouble(parts[9], 0) / config.OcrScale;
+                OcrMatch match = new OcrMatch(text, new RectangleF((float)left, (float)top, (float)(right - left), (float)(bottom - top)), conf);
+                words.Add(match);
+                string key = parts[2] + ":" + parts[3] + ":" + parts[4];
+                if (!grouped.ContainsKey(key)) grouped[key] = new List<OcrMatch>();
+                grouped[key].Add(match);
+            }
+
+            List<List<OcrMatch>> wordLines = grouped.Values.Select(list => list.OrderBy(w => w.Rect.Left).ToList()).ToList();
+            List<OcrMatch> lineMatches = new List<OcrMatch>();
+            foreach (List<OcrMatch> line in wordLines)
+            {
+                lineMatches.Add(MergeWords(line));
+            }
+            return new OcrSnapshot(screenshot, words, wordLines, lineMatches);
+        }
+
+        private List<OcrMatch> FindPhrase(List<List<OcrMatch>> wordLines, string query)
+        {
+            bool cjk = HasCjk(query);
+            string needle = cjk ? NormalizeCjk(query) : NormalizeLatin(query);
+            List<OcrMatch> matches = new List<OcrMatch>();
+            foreach (List<OcrMatch> line in wordLines)
+            {
+                List<Tuple<string, OcrMatch>> normalized = new List<Tuple<string, OcrMatch>>();
+                foreach (OcrMatch word in line)
+                {
+                    string text = cjk ? NormalizeCjk(word.Text) : NormalizeLatin(word.Text);
+                    if (text.Length > 0) normalized.Add(Tuple.Create(text, word));
+                }
+
+                for (int start = 0; start < normalized.Count; start++)
+                {
+                    string combined = "";
+                    List<OcrMatch> selected = new List<OcrMatch>();
+                    for (int index = start; index < normalized.Count; index++)
+                    {
+                        combined += normalized[index].Item1;
+                        selected.Add(normalized[index].Item2);
+                        if (combined.Contains(needle))
+                        {
+                            matches.Add(MergeWords(selected));
+                            break;
+                        }
+                        if (combined.Length > needle.Length + 12 && !combined.Contains(needle)) break;
+                    }
+                }
+            }
+            return PreferExactOrCompact(matches, needle, cjk);
+        }
+
+        private static List<OcrMatch> PreferExactOrCompact(List<OcrMatch> matches, string normalizedNeedle, bool cjk)
+        {
+            List<OcrMatch> deduped = Dedupe(matches);
+            if (deduped.Count <= 1) return deduped;
+
+            List<OcrMatch> exact = deduped
+                .Where(m => NormalizeForMode(m.Text, cjk) == normalizedNeedle)
+                .ToList();
+            if (exact.Count > 0) return exact;
+
+            int allowance = cjk ? 2 : 4;
+            List<OcrMatch> compact = deduped
+                .Where(m => NormalizeForMode(m.Text, cjk).Length <= normalizedNeedle.Length + allowance)
+                .ToList();
+            if (compact.Count > 0) return compact;
+
+            int minLength = deduped
+                .Select(m => NormalizeForMode(m.Text, cjk).Length)
+                .Where(length => length > 0)
+                .DefaultIfEmpty(int.MaxValue)
+                .Min();
+            return deduped
+                .Where(m => NormalizeForMode(m.Text, cjk).Length == minLength)
+                .ToList();
+        }
+
+        private static string NormalizeForMode(string text, bool cjk)
+        {
+            return cjk ? NormalizeCjk(text) : NormalizeLatin(text);
+        }
+
+        private static List<OcrMatch> Dedupe(List<OcrMatch> matches)
+        {
+            List<OcrMatch> result = new List<OcrMatch>();
+            HashSet<string> seen = new HashSet<string>();
+            foreach (OcrMatch match in matches)
+            {
+                string key = string.Format("{0}:{1}:{2}:{3}", (int)Math.Round(match.Rect.Left / 3), (int)Math.Round(match.Rect.Top / 3), (int)Math.Round(match.Rect.Right / 3), (int)Math.Round(match.Rect.Bottom / 3));
+                if (seen.Add(key)) result.Add(match);
+            }
+            return result;
+        }
+
+        private static OcrMatch MergeWords(List<OcrMatch> words)
+        {
+            float left = words.Min(w => w.Rect.Left);
+            float top = words.Min(w => w.Rect.Top);
+            float right = words.Max(w => w.Rect.Right);
+            float bottom = words.Max(w => w.Rect.Bottom);
+            double conf = words.Where(w => w.Confidence >= 0).Select(w => w.Confidence).DefaultIfEmpty(-1).Average();
+            return new OcrMatch(string.Join(" ", words.Select(w => w.Text).ToArray()), new RectangleF(left, top, right - left, bottom - top), conf);
+        }
+
+        private static double ParseDouble(string raw, double fallback)
+        {
+            double value;
+            return double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out value) ? value : fallback;
+        }
+
+        private static bool HasCjk(string text)
+        {
+            return text.Any(ch => ch >= '\u4e00' && ch <= '\u9fff');
+        }
+
+        private static string NormalizeCjk(string text)
+        {
+            string normalized = Regex.Replace(text ?? "", @"\s+", "");
+            normalized = normalized.Replace("魯", "鲁");
+            normalized = normalized.Replace("臺", "台");
+            normalized = normalized.Replace("賓", "宾");
+            return Regex.Replace(normalized, @"[^\u4e00-\u9fffA-Za-z0-9]", "");
+        }
+
+        private void EnsurePaddleOcrProcess()
+        {
+            if (paddleOcrProcess != null && !paddleOcrProcess.HasExited) return;
+
+            paddleOcrErrors.Length = 0;
+            ProcessStartInfo psi = CreateBridgeProcessInfo(paddleOcrPython, paddleOcrBridge);
+
+            paddleOcrProcess = new Process();
+            paddleOcrProcess.StartInfo = psi;
+            paddleOcrProcess.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+            {
+                if (!string.IsNullOrEmpty(e.Data))
+                {
+                    lock (paddleOcrErrors)
+                    {
+                        if (paddleOcrErrors.Length < 12000) paddleOcrErrors.AppendLine(e.Data);
+                    }
+                }
+            };
+
+            paddleOcrProcess.Start();
+            paddleOcrProcess.BeginErrorReadLine();
+
+            string ready = paddleOcrProcess.StandardOutput.ReadLine();
+            if (ready == null || !ready.Contains("\"ready\""))
+            {
+                throw new InvalidOperationException("PaddleOCR 初始化失败。" + PaddleOcrErrorSuffix());
+            }
+        }
+
+        private void EnsureRapidOcrProcess()
+        {
+            if (rapidOcrProcess != null && !rapidOcrProcess.HasExited) return;
+
+            rapidOcrErrors.Length = 0;
+            ProcessStartInfo psi = CreateBridgeProcessInfo(rapidOcrPython, rapidOcrBridge);
+
+            rapidOcrProcess = new Process();
+            rapidOcrProcess.StartInfo = psi;
+            rapidOcrProcess.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+            {
+                if (!string.IsNullOrEmpty(e.Data))
+                {
+                    lock (rapidOcrErrors)
+                    {
+                        if (rapidOcrErrors.Length < 8000) rapidOcrErrors.AppendLine(e.Data);
+                    }
+                }
+            };
+
+            rapidOcrProcess.Start();
+            rapidOcrProcess.BeginErrorReadLine();
+
+            string ready = rapidOcrProcess.StandardOutput.ReadLine();
+            if (ready == null || !ready.Contains("\"ready\""))
+            {
+                throw new InvalidOperationException("RapidOCR 初始化失败。" + RapidOcrErrorSuffix());
+            }
+        }
+
+        private ProcessStartInfo CreateBridgeProcessInfo(string pythonPath, string bridgePath)
+        {
+            ProcessStartInfo psi = new ProcessStartInfo();
+            psi.FileName = pythonPath;
+            psi.WorkingDirectory = config.BaseDir;
+            psi.Arguments = "\"" + bridgePath + "\"";
+            psi.UseShellExecute = false;
+            psi.RedirectStandardInput = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            psi.CreateNoWindow = true;
+            psi.StandardOutputEncoding = Encoding.UTF8;
+            psi.StandardErrorEncoding = Encoding.UTF8;
+            return psi;
+        }
+
+        private OcrSnapshot ParseOcrJson(string rawJson, Screenshot screenshot, string engineName, string errorSuffix)
+        {
+            Dictionary<string, object> root = jsonSerializer.Deserialize<Dictionary<string, object>>(rawJson);
+            int code = Convert.ToInt32(root["code"], CultureInfo.InvariantCulture);
+            if (code != 100 && code != 0)
+            {
+                string error = root.ContainsKey("error") ? Convert.ToString(root["error"], CultureInfo.InvariantCulture) : rawJson;
+                throw new InvalidOperationException(engineName + " 执行失败：" + error + errorSuffix);
+            }
+
+            List<OcrMatch> matches = new List<OcrMatch>();
+            object dataObj;
+            if (root.TryGetValue("data", out dataObj))
+            {
+                IEnumerable items = dataObj as IEnumerable;
+                if (items != null && !(dataObj is string))
+                {
+                    foreach (object itemObj in items)
+                    {
+                        Dictionary<string, object> item = itemObj as Dictionary<string, object>;
+                        if (item == null) continue;
+                        string text = Convert.ToString(item["text"], CultureInfo.InvariantCulture);
+                        double confidence = item.ContainsKey("confidence") ? Convert.ToDouble(item["confidence"], CultureInfo.InvariantCulture) : -1;
+                        RectangleF rect = ParseOcrRect(item["rect"], screenshot);
+                        matches.Add(new OcrMatch(text, rect, confidence));
+                    }
+                }
+            }
+
+            List<List<OcrMatch>> wordLines = GroupOcrLines(matches);
+            List<OcrMatch> lineMatches = wordLines.Select(MergeWords).ToList();
+            return new OcrSnapshot(screenshot, matches, wordLines, lineMatches);
+        }
+
+        private RectangleF ParseOcrRect(object rectObj, Screenshot screenshot)
+        {
+            List<object> values = new List<object>();
+            IEnumerable enumerable = rectObj as IEnumerable;
+            if (enumerable != null && !(rectObj is string))
+            {
+                foreach (object value in enumerable) values.Add(value);
+            }
+            if (values.Count < 4) return new RectangleF(screenshot.Left, screenshot.Top, 1, 1);
+            double scale = Math.Max(1.0, config.OcrScale);
+            float left = (float)(Convert.ToDouble(values[0], CultureInfo.InvariantCulture) / scale) + screenshot.Left;
+            float top = (float)(Convert.ToDouble(values[1], CultureInfo.InvariantCulture) / scale) + screenshot.Top;
+            float width = (float)(Convert.ToDouble(values[2], CultureInfo.InvariantCulture) / scale);
+            float height = (float)(Convert.ToDouble(values[3], CultureInfo.InvariantCulture) / scale);
+            return new RectangleF(left, top, width, height);
+        }
+
+        private static List<List<OcrMatch>> GroupOcrLines(List<OcrMatch> matches)
+        {
+            List<List<OcrMatch>> lines = new List<List<OcrMatch>>();
+            foreach (OcrMatch match in matches.OrderBy(m => m.Rect.Top).ThenBy(m => m.Rect.Left))
+            {
+                float centerY = match.Rect.Top + match.Rect.Height / 2;
+                List<OcrMatch> target = null;
+                foreach (List<OcrMatch> line in lines)
+                {
+                    float lineCenter = line.Average(m => m.Rect.Top + m.Rect.Height / 2);
+                    float tolerance = Math.Max(12, line.Average(m => m.Rect.Height) * 0.65f);
+                    if (Math.Abs(centerY - lineCenter) <= tolerance)
+                    {
+                        target = line;
+                        break;
+                    }
+                }
+
+                if (target == null)
+                {
+                    target = new List<OcrMatch>();
+                    lines.Add(target);
+                }
+                target.Add(match);
+            }
+
+            foreach (List<OcrMatch> line in lines)
+            {
+                line.Sort((a, b) => a.Rect.Left.CompareTo(b.Rect.Left));
+            }
+            return lines;
+        }
+
+        private string PaddleOcrErrorSuffix()
+        {
+            lock (paddleOcrErrors)
+            {
+                if (paddleOcrErrors.Length == 0) return "";
+                return "\r\nPaddleOCR stderr:\r\n" + paddleOcrErrors;
+            }
+        }
+
+        private string RapidOcrErrorSuffix()
+        {
+            lock (rapidOcrErrors)
+            {
+                if (rapidOcrErrors.Length == 0) return "";
+                return "\r\nRapidOCR stderr:\r\n" + rapidOcrErrors;
+            }
+        }
+
+        private static string NormalizeLatin(string text)
+        {
+            return Regex.Replace((text ?? "").ToUpperInvariant(), @"[^A-Z0-9]", "");
+        }
+
+        private static int CommonCharCount(string a, string b)
+        {
+            HashSet<char> seen = new HashSet<char>();
+            int count = 0;
+            foreach (char ch in a)
+            {
+                if (!seen.Add(ch)) continue;
+                if (b.IndexOf(ch) >= 0) count++;
+            }
+            return count;
+        }
+
+        private static bool FuzzyContains(string haystack, string needle, int maxDistance)
+        {
+            if (haystack.Length <= needle.Length + 4)
+            {
+                return LevenshteinDistance(haystack, needle) <= maxDistance;
+            }
+
+            int minLength = Math.Max(1, needle.Length - 2);
+            int maxLength = Math.Min(haystack.Length, needle.Length + 4);
+            for (int length = minLength; length <= maxLength; length++)
+            {
+                for (int start = 0; start + length <= haystack.Length; start++)
+                {
+                    if (LevenshteinDistance(haystack.Substring(start, length), needle) <= maxDistance) return true;
+                }
+            }
+            return false;
+        }
+
+        private static int LevenshteinDistance(string a, string b)
+        {
+            int[,] dp = new int[a.Length + 1, b.Length + 1];
+            for (int i = 0; i <= a.Length; i++) dp[i, 0] = i;
+            for (int j = 0; j <= b.Length; j++) dp[0, j] = j;
+
+            for (int i = 1; i <= a.Length; i++)
+            {
+                for (int j = 1; j <= b.Length; j++)
+                {
+                    int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                    int delete = dp[i - 1, j] + 1;
+                    int insert = dp[i, j - 1] + 1;
+                    int replace = dp[i - 1, j - 1] + cost;
+                    dp[i, j] = Math.Min(Math.Min(delete, insert), replace);
+                }
+            }
+
+            return dp[a.Length, b.Length];
+        }
+
+        private static string ResolvePython(Config config, string configuredPath, string envName)
+        {
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                return Path.IsPathRooted(configuredPath)
+                    ? configuredPath
+                    : config.ResolvePath(configuredPath);
+            }
+
+            string env = Environment.GetEnvironmentVariable(envName);
+            if (!string.IsNullOrWhiteSpace(env)) return env;
+
+            string bundled = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".cache",
+                "codex-runtimes",
+                "codex-primary-runtime",
+                "dependencies",
+                "python",
+                "python.exe");
+            if (File.Exists(bundled)) return bundled;
+
+            return "python.exe";
+        }
+
+        public void Dispose()
+        {
+            StopBridgeProcess(ref paddleOcrProcess);
+            StopBridgeProcess(ref rapidOcrProcess);
+        }
+
+        private static void StopBridgeProcess(ref Process process)
+        {
+            if (process == null) return;
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.StandardInput.WriteLine("__exit__");
+                    process.StandardInput.Flush();
+                    if (!process.WaitForExit(1500)) process.Kill();
+                }
+            }
+            catch
+            {
+                try { if (!process.HasExited) process.Kill(); } catch { }
+            }
+            finally
+            {
+                process.Dispose();
+                process = null;
+            }
+        }
+    }
+
+}

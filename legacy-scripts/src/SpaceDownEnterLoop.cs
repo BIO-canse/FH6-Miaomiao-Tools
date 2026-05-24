@@ -1,49 +1,89 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using FH6AutomationShared;
 
 internal static class SpaceDownEnterLoop
 {
-    private const int ExitVirtualKey = 0x43; // C
-    private const int AltVirtualKey = 0x12;
-    private const ushort KeyEnter = 0x0D;
-    private const ushort KeySpace = 0x20;
-    private const ushort KeyDown = 0x28;
+    private const int ExitVirtualKey = FH6AutomationConstants.Keys.ExitVirtualKey;
+    private const int HotkeyModifierVirtualKey = FH6AutomationConstants.Keys.HotkeyModifierVirtualKey;
+    private const ushort KeyEnter = FH6AutomationConstants.Keys.Enter;
+    private const ushort KeySpace = FH6AutomationConstants.Keys.Space;
+    private const ushort KeyDown = FH6AutomationConstants.Keys.Down;
+    private const int LoopDelayMs = FH6AutomationConstants.Timing.HalfSecondMs;
     private static volatile bool StopRequested;
+    private static string SafeStopFile;
 
-    private static void Main()
+    private static void Main(string[] args)
     {
-        Console.Title = "SpaceDownEnterLoop - Alt+C 退出";
-        Console.WriteLine("程序已启动。");
-        Console.WriteLine("启动后先等待 10 秒，然后循环：空格、下、Enter、Enter、Enter。");
-        Console.WriteLine("每个键按下 0.1 秒，键与键之间等待 1 秒。");
-        Console.WriteLine("按 Alt+C 退出。请在第一次 10 秒等待内切到目标窗口。");
+        int rounds = 0;
+        int startupDelayMs = FH6AutomationConstants.Timing.StartupDelayMs;
+        ParseArgs(args, out rounds, out startupDelayMs);
 
-        if (!WaitOrExit(TimeSpan.FromSeconds(10)))
+        Console.Title = "SpaceDownEnterLoop - Space+C 退出";
+        Console.WriteLine("程序已启动。");
+        Console.WriteLine(startupDelayMs > 0 ? "启动后先等待 10 秒，然后循环：空格、下、Enter、Enter、Enter。" : "立即开始循环：空格、下、Enter、Enter、Enter。");
+        Console.WriteLine("每个键按下 0.1 秒，键与键之间等待 0.5 秒。");
+        if (rounds > 0) Console.WriteLine("本次按参数运行 " + rounds + " 轮后自动退出。");
+        Console.WriteLine("按 Space+C 退出。请在第一次 10 秒等待内切到目标窗口。");
+
+        if (!WaitOrExit(TimeSpan.FromMilliseconds(startupDelayMs)))
         {
             Console.WriteLine("已退出。");
             return;
         }
 
-        while (!ExitRequested())
+        int completed = 0;
+        while (!ExitRequested() && (rounds <= 0 || completed < rounds))
         {
             TapKey(KeySpace);
-            WaitOrExit(TimeSpan.FromSeconds(1));
+            WaitOrExit(TimeSpan.FromMilliseconds(LoopDelayMs));
 
             TapKey(KeyDown);
-            WaitOrExit(TimeSpan.FromSeconds(1));
+            WaitOrExit(TimeSpan.FromMilliseconds(LoopDelayMs));
 
             TapKey(KeyEnter);
-            WaitOrExit(TimeSpan.FromSeconds(1));
+            WaitOrExit(TimeSpan.FromMilliseconds(LoopDelayMs));
 
             TapKey(KeyEnter);
-            WaitOrExit(TimeSpan.FromSeconds(1));
+            WaitOrExit(TimeSpan.FromMilliseconds(LoopDelayMs));
 
             TapKey(KeyEnter);
-            WaitOrExit(TimeSpan.FromSeconds(1));
+            WaitOrExit(TimeSpan.FromMilliseconds(LoopDelayMs));
+
+            completed++;
+            if (rounds > 0) Console.WriteLine("已完成 " + completed + " / " + rounds + " 轮。");
+            if (SafeStopRequested())
+            {
+                Console.WriteLine("收到安全退出请求，当前轮已完成。");
+                break;
+            }
         }
 
         Console.WriteLine("已退出。");
+    }
+
+    private static void ParseArgs(string[] args, out int rounds, out int startupDelayMs)
+    {
+        rounds = 0;
+        startupDelayMs = FH6AutomationConstants.Timing.StartupDelayMs;
+        for (int i = 0; i < args.Length; i++)
+        {
+            string arg = args[i];
+            if (arg == "--rounds" && i + 1 < args.Length)
+            {
+                int.TryParse(args[++i], out rounds);
+            }
+            else if (arg == "--startup-delay-ms" && i + 1 < args.Length)
+            {
+                int.TryParse(args[++i], out startupDelayMs);
+                if (startupDelayMs < 0) startupDelayMs = 0;
+            }
+            else if (arg == "--safe-stop-file" && i + 1 < args.Length)
+            {
+                SafeStopFile = args[++i];
+            }
+        }
     }
 
     private static bool WaitOrExit(TimeSpan duration)
@@ -69,13 +109,18 @@ internal static class SpaceDownEnterLoop
             return true;
         }
 
-        if (IsKeyDown(AltVirtualKey) && IsKeyDown(ExitVirtualKey))
+        if (IsKeyDown(HotkeyModifierVirtualKey) && IsKeyDown(ExitVirtualKey))
         {
             StopRequested = true;
             return true;
         }
 
         return false;
+    }
+
+    private static bool SafeStopRequested()
+    {
+        return !string.IsNullOrEmpty(SafeStopFile) && System.IO.File.Exists(SafeStopFile);
     }
 
     private static bool IsKeyDown(int virtualKey)
@@ -86,7 +131,7 @@ internal static class SpaceDownEnterLoop
     private static void TapKey(ushort virtualKey)
     {
         SendKeyboardInput(virtualKey, false);
-        WaitOrExit(TimeSpan.FromMilliseconds(100));
+        WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.TapMs));
         SendKeyboardInput(virtualKey, true);
     }
 
