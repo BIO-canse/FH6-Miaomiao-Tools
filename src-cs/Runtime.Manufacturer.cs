@@ -25,7 +25,6 @@ namespace FH6SkillPointOcr
             ClearOcrFields();
             OpenManufacturerSelectionPage();
             SelectSubaruManufacturer();
-            input.SleepMs(config.AfterClickMs);
         }
 
         private void OpenManufacturerSelectionPage()
@@ -45,11 +44,13 @@ namespace FH6SkillPointOcr
         private void SelectSubaruManufacturer()
         {
             FindSubaruManufacturerByOcr("车库斯巴鲁制造商", false);
+            SleepWithFullAutoHotkey(config.AfterClickMs);
+            MoveMouseToVehicleListSecondRowRightEdge("idle after entering Subaru vehicle list");
         }
 
         private void FindSubaruManufacturerByOcr(string cacheLabel, bool moveToIdleAfterClick)
         {
-            SetStatus("select Subaru manufacturer", "鼠标移到屏幕中心，滚动到底，OCR 点击斯巴鲁");
+            SetStatus("select Subaru manufacturer", "鼠标移到屏幕中心，滚动到底，OCR 点击斯巴鲁，进入后停到车辆列表右侧");
             SetOcrSummary("制造商定位: 滚动到底后 OCR 查找斯巴鲁");
             MoveMouseToScreenCenter("manufacturer list scroll focus");
             input.ScrollDown(config.ManufacturerScrollTicks, config.ScrollTickDelayMs);

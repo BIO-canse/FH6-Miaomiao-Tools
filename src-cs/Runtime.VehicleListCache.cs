@@ -180,12 +180,19 @@ namespace FH6SkillPointOcr
 
         private void MoveMouseToFirstVisibleCellCenter(string reason)
         {
+            MoveMouseToVehicleListSecondRowRightEdge(reason);
+        }
+
+        private void MoveMouseToVehicleListSecondRowRightEdge(string reason)
+        {
             if (!grid.Ready) return;
+            int row = Math.Min(1, Math.Max(0, grid.Rows - 1));
+            int col = Math.Max(0, grid.VisibleColumns - 1);
             Point point;
-            if (!grid.TryGetFirstVisibleCellCenter(out point)) return;
+            if (!grid.TryGetCellCenter(new CellKey(row, col), out point)) return;
             Rectangle screen = capture.GetBounds();
             Point idle = new Point(screen.Right - 2, point.Y);
-            Console.WriteLine("[INPUT] " + reason + " at vehicle list right edge " + idle.X + "," + idle.Y);
+            Console.WriteLine("[INPUT] " + reason + " at vehicle list second-row last-column right edge " + idle.X + "," + idle.Y);
             input.MoveTo(idle.X, idle.Y);
         }
     }

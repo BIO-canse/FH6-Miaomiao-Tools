@@ -200,7 +200,7 @@ namespace FH6SkillPointOcr
 
         private void ReopenSubaruListFromVehicleListForDriveSearch()
         {
-            SetStatus("reopen Subaru list", "Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 滚动到底 -> OCR 点击斯巴鲁");
+            SetStatus("reopen Subaru list", "Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 滚动到底 -> OCR 点击斯巴鲁 -> 鼠标停右侧");
             ClearOcrFields();
             DebugGate("reopen Subaru list", "按 Enter 进入车辆列表");
             input.Tap("ENTER");
@@ -209,7 +209,6 @@ namespace FH6SkillPointOcr
             input.Tap("BACKSPACE");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             SelectSubaruManufacturer();
-            FullAutoSleep(config.AfterClickMs);
             vehicleList.ResetView();
             UpdateOverlay(null, null, null, null);
         }
@@ -332,7 +331,7 @@ namespace FH6SkillPointOcr
 
         private void ResetToSubaruListStartForDriveSearch()
         {
-            SetStatus("reset Subaru list for drive", "Esc -> 0.5 秒 -> Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 滚动到底 -> OCR 点击斯巴鲁");
+            SetStatus("reset Subaru list for drive", "Esc -> 0.5 秒 -> Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 滚动到底 -> OCR 点击斯巴鲁 -> 鼠标停右侧");
             input.Tap("ESC");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             ReopenSubaruListFromVehicleListForDriveSearch();

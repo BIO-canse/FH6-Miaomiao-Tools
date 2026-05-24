@@ -89,6 +89,17 @@ namespace FH6SkillPointOcr
             return true;
         }
 
+        public bool TryGetCellCenter(CellKey cell, out Point point)
+        {
+            point = Point.Empty;
+            RectangleF rect;
+            if (!cells.TryGetValue(cell, out rect)) return false;
+            point = new Point(
+                (int)Math.Round(rect.Left + rect.Width / 2),
+                (int)Math.Round(rect.Top + rect.Height / 2));
+            return true;
+        }
+
         public List<CellView> CellViews(HashSet<CellKey> targets, HashSet<CellKey> validNew, HashSet<CellKey> invalidNew, CellKey? chosen)
         {
             return CellViews(targets, validNew, invalidNew, new HashSet<CellKey>(), new HashSet<CellKey>(), chosen);
