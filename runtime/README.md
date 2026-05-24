@@ -4,6 +4,7 @@
 
 - `paddleocr-py/`：PaddleOCR PP-OCRv5 运行依赖。
 - `paddleocr-models/`：PP-OCRv5 mobile det/rec 默认模型；server det/rec 保留备用。
+- `python/`：发布包内置 Python 运行时；如果存在，程序会优先使用它。
 - `paddleocr-cache/`：PaddleOCR / PaddleX / Paddle 缓存目录；缺模型时首次下载也写到这里。
 - `paddleocr_bridge.py`：C# 常驻调用 PaddleOCR 的桥接脚本。
 - `rapidocr-py/`：RapidOCR 运行依赖，保留为可切换后端。

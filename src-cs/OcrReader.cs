@@ -713,6 +713,9 @@ namespace FH6SkillPointOcr
             string env = Environment.GetEnvironmentVariable(envName);
             if (!string.IsNullOrWhiteSpace(env)) return env;
 
+            string localRuntime = Path.Combine(config.BaseDir, "runtime", "python", "python.exe");
+            if (File.Exists(localRuntime)) return localRuntime;
+
             string bundled = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".cache",

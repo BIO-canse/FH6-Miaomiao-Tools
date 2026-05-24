@@ -6,6 +6,7 @@ state/
 runtime/paddleocr-cache/
 runtime/paddleocr-models/
 runtime/paddleocr-py/
+runtime/python/
 runtime/rapidocr-py/
 runtime/tesseract/
 config/user-settings.json
