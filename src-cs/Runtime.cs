@@ -167,7 +167,7 @@ namespace FH6SkillPointOcr
             if (completionBoundaryReached)
             {
                 SetStatus("completed", "本轮技术点已点完，脚本停止");
-                throw new CompletedException("本轮完成后没有状态 3，且最后一个 2 的下一个格子已确认是 1。");
+                throw new CompletedException("本轮完成后没有状态 3，且车辆列表完成边界已确认。");
             }
         }
 

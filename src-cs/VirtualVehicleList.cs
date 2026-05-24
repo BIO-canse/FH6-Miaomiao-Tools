@@ -110,7 +110,12 @@ namespace FH6SkillPointOcr
 
         public bool HasPendingDeleteVehicle
         {
-            get { return cells.Values.Any(c => IsDeleteTargetCell(c) && IsBeforeKnownBoundary(new CellKey(c.Row, c.Col))); }
+            get
+            {
+                return cells.Values.Any(c =>
+                    c.NewState == FH6AutomationConstants.VehicleState.DeletableName &&
+                    IsBeforeKnownBoundary(new CellKey(c.Row, c.Col)));
+            }
         }
 
         public bool HasDriveVehicle
@@ -132,15 +137,13 @@ namespace FH6SkillPointOcr
             nextCell = new CellKey(0, 0);
             if (HasPendingValidNew) return false;
 
+            CellKey boundary;
+            if (!TryGetFirstKnownBoundaryZero(out boundary)) return false;
+
             VirtualVehicleCell last = LastKnownTargetModelCell();
-            if (last == null) return false;
-
-            lastTarget = new CellKey(last.Row, last.Col);
-            nextCell = NextCell(lastTarget);
-
-            VirtualVehicleCell next;
-            if (!cells.TryGetValue(nextCell, out next)) return false;
-            return IsTerminalBoundaryState(StateCode(next));
+            lastTarget = last == null ? new CellKey(-1, -1) : new CellKey(last.Row, last.Col);
+            nextCell = boundary;
+            return true;
         }
 
         public int PreferredEntryOffset(int visibleColumns)
@@ -590,15 +593,13 @@ namespace FH6SkillPointOcr
             nextCell = new CellKey(0, 0);
             if (HasPendingDeleteVehicle) return false;
 
+            CellKey boundary;
+            if (!TryGetFirstKnownBoundaryZero(out boundary)) return false;
+
             VirtualVehicleCell last = LastKnownTargetModelCell();
-            if (last == null) return false;
-
-            lastTarget = new CellKey(last.Row, last.Col);
-            nextCell = NextCell(lastTarget);
-
-            VirtualVehicleCell next;
-            if (!cells.TryGetValue(nextCell, out next)) return false;
-            return IsTerminalBoundaryState(StateCode(next));
+            lastTarget = last == null ? new CellKey(-1, -1) : new CellKey(last.Row, last.Col);
+            nextCell = boundary;
+            return true;
         }
 
         public void MarkProcessed(CellKey localCell)
@@ -766,7 +767,7 @@ namespace FH6SkillPointOcr
         {
             boundary = new CellKey(0, 0);
             VirtualVehicleCell lastTarget = LastKnownTargetModelCell();
-            if (lastTarget == null) return false;
+            if (lastTarget == null) return TryGetNoTargetManufacturerBoundaryZero(out boundary);
 
             CellKey next = NextCell(new CellKey(lastTarget.Row, lastTarget.Col));
             if (ShouldSkipPlannerCell(next)) return false;
@@ -777,6 +778,32 @@ namespace FH6SkillPointOcr
 
             boundary = next;
             return true;
+        }
+
+        private bool TryGetNoTargetManufacturerBoundaryZero(out CellKey boundary)
+        {
+            boundary = new CellKey(0, 0);
+            if (cells.Count == 0) return false;
+
+            int maxOrder = cells.Keys.Max(c => OrderIndex(c.Row, c.Col));
+            for (int order = 0; order <= maxOrder; order++)
+            {
+                CellKey key = CellFromOrderIndex(order);
+                if (ShouldSkipPlannerCell(key)) continue;
+
+                VirtualVehicleCell cell;
+                if (!cells.TryGetValue(key, out cell)) return false;
+
+                int state = StateCode(cell);
+                if (IsTargetModelState(state)) return false;
+                if (state == FH6AutomationConstants.VehicleState.OtherManufacturerOrUnknown)
+                {
+                    boundary = key;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private VirtualVehicleCell LastKnownTargetModelCell()
@@ -964,9 +991,7 @@ namespace FH6SkillPointOcr
 
         private bool IsDeleteTargetCell(VirtualVehicleCell cell)
         {
-            int state = StateCode(cell);
-            return state == FH6AutomationConstants.VehicleState.Target ||
-                   state == FH6AutomationConstants.VehicleState.Deletable;
+            return StateCode(cell) == FH6AutomationConstants.VehicleState.Deletable;
         }
 
         private bool IsKnownNonDriveColumn(int col)
@@ -1140,7 +1165,7 @@ namespace FH6SkillPointOcr
                 root["edit_count"] = EditCount;
                 root["last_known_empty_run"] = LastKnownEmptyRun;
                 root["last_suggested_skip"] = LastSuggestedSkip;
-                root["state_codes"] = "0=非斯巴鲁或未确认制造商, 1=斯巴鲁但非目标车, 2=目标车但没有有效全新/不可删, 3=目标车且有有效全新, 4=可删车辆, 5=用来开刷技术点蓝图的车辆";
+                root["state_codes"] = "0=非斯巴鲁或未确认制造商, 1=斯巴鲁但非目标车, 2=目标车但没有有效全新, 3=目标车且有有效全新, 4=可删车辆, 5=用来开刷技术点蓝图的车辆";
 
                 List<Dictionary<string, object>> items = new List<Dictionary<string, object>>();
                 foreach (VirtualVehicleCell cell in cells.Values.OrderBy(c => c.Col).ThenBy(c => c.Row))

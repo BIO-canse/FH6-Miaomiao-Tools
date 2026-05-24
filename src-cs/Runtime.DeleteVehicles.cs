@@ -24,7 +24,7 @@ namespace FH6SkillPointOcr
         {
             loopCount++;
             SetStage("自动删车");
-            SetStatus("delete loop " + loopCount, "查找状态 2 可删车辆");
+            SetStatus("delete loop " + loopCount, "查找状态 4 可删车辆");
             if (!grid.Locked) BuildGrid();
 
             SetStage("查找可删车辆");
@@ -74,12 +74,10 @@ namespace FH6SkillPointOcr
         {
             VehicleGridObservation observation = BuildVehicleGridObservation(snapshot, scrollIndex);
             ApplyVehicleGridObservation(observation);
-            HashSet<CellKey> deleteCandidates = new HashSet<CellKey>(observation.TargetCells);
-            deleteCandidates.ExceptWith(observation.DriveCells);
-            deleteCandidates.ExceptWith(observation.ValidNewCells);
+            HashSet<CellKey> deleteCandidates = new HashSet<CellKey>(observation.DeletableCells);
             CellKey? chosen = LeftTopCell(deleteCandidates);
             SetOcrSummary(FullObservationSummary(observation, ", 删车滚动=" + scrollIndex));
-            lastTargetSummary = chosen.HasValue ? string.Format("可删格: col={0}, row={1}", chosen.Value.Col, chosen.Value.Row) : "可删格: 未找到状态 2";
+            lastTargetSummary = chosen.HasValue ? string.Format("可删格: col={0}, row={1}", chosen.Value.Col, chosen.Value.Row) : "可删格: 未找到状态 4";
 
             UpdateOverlay(observation.TargetCells, observation.ValidNewCells, observation.InvalidNewCells, observation.DeletableCells, observation.DriveCells, chosen);
             if (!chosen.HasValue && dumpWhenNoChosen) WriteOcrDump(snapshot, "delete-current");

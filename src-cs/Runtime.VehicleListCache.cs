@@ -150,14 +150,25 @@ namespace FH6SkillPointOcr
             CellKey nextCell;
             if (!vehicleList.IsCompletionBoundaryReached(out lastTarget, out nextCell)) return false;
 
+            if (lastTarget.Row < 0)
+            {
+                lastTargetSummary = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "完成边界: 未找到目标车型，首个0=col{0}/row{1}",
+                    nextCell.Col,
+                    nextCell.Row);
+                SetOcrSummary("虚拟列表: 无状态2/3/4/5，列表末尾已确认出现0");
+                return true;
+            }
+
             lastTargetSummary = string.Format(
                 CultureInfo.InvariantCulture,
-                "完成边界: 最后2=col{0}/row{1}, 下一个=col{2}/row{3} 是1",
+                "完成边界: 最后目标车型=col{0}/row{1}, 下一个=col{2}/row{3}",
                 lastTarget.Col,
                 lastTarget.Row,
                 nextCell.Col,
                 nextCell.Row);
-            SetOcrSummary("虚拟列表: 无状态3，最后一个2后面已确认是1");
+            SetOcrSummary("虚拟列表: 无状态3，目标车型区间末尾已确认是0或1");
             return true;
         }
 
@@ -167,14 +178,25 @@ namespace FH6SkillPointOcr
             CellKey nextCell;
             if (!vehicleList.IsDeleteCompletionBoundaryReached(out lastTarget, out nextCell)) return false;
 
+            if (lastTarget.Row < 0)
+            {
+                lastTargetSummary = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "删车完成边界: 未找到目标车型，首个0=col{0}/row{1}",
+                    nextCell.Col,
+                    nextCell.Row);
+                SetOcrSummary("虚拟列表: 无状态2/3/4/5，列表末尾已确认出现0");
+                return true;
+            }
+
             lastTargetSummary = string.Format(
                 CultureInfo.InvariantCulture,
-                "删车完成边界: 最后已知=col{0}/row{1}, 下一个=col{2}/row{3}",
+                "删车完成边界: 最后目标车型=col{0}/row{1}, 下一个=col{2}/row{3}",
                 lastTarget.Col,
                 lastTarget.Row,
                 nextCell.Col,
                 nextCell.Row);
-            SetOcrSummary("虚拟列表: 无状态2，列表尾部已确认是1");
+            SetOcrSummary("虚拟列表: 无状态4，目标车型区间末尾已确认是0或1");
             return true;
         }
 

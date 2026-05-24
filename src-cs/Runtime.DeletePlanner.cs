@@ -106,8 +106,8 @@ namespace FH6SkillPointOcr
             if (IsDeleteCompletionBoundaryReached())
             {
                 return DeleteSearchDecision.Stop(
-                    "没有剩余状态 2 可删车辆",
-                    "没有状态 2/4 可删车辆，且目标车型区间末尾的下一个格子已确认是 0 或 1。");
+                    "没有剩余状态 4 可删车辆",
+                    "没有状态 4 可删车辆，且目标车型区间末尾的下一个格子已确认是 0 或 1。");
             }
 
             if (subaruListBoundaryReached)
