@@ -104,9 +104,9 @@ namespace FH6AutomationShared
             public const int QuickVerifyTarget = 100;
             public const int PerVehicle = 32;
             public const int MinuteLoopGain = 10;
-            public const int MinuteLoopEnterToXWaitMs = 37000;
+            public const int MinuteLoopEnterToXWaitMs = 40000;
             public const int MinuteLoopAfterXWaitMs = Timing.OneSecondMs;
-            public const int MinuteLoopEstimatedLoopMs = 48300;
+            public const int MinuteLoopEstimatedLoopMs = 51300;
         }
 
         internal static class Credits

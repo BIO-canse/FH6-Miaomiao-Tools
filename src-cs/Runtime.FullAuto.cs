@@ -69,7 +69,16 @@ namespace FH6SkillPointOcr
         private void RunFullAutoStartupPreflight()
         {
             ClearSharedUiClickCache("full auto startup");
+            ResetFullAutoSessionCounters();
             SetOcrSummary("总控启动前置: " + FullAutoModeSummary() + "；当前 CR " + remainingCredits + "；买车每辆 " + FH6AutomationConstants.Credits.VehiclePrice + "；第一轮先定表，后续直接读写虚拟列表");
+        }
+
+        private void ResetFullAutoSessionCounters()
+        {
+            superWheelspinCount = 0;
+            skillPointEventIndex = 0;
+            minuteLoopCompletedCount = 0;
+            PersistFullAutoSkillPoints("full_auto_session_start");
         }
 
         private void RunDeleteChildHandoff()

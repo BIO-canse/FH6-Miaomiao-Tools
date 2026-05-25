@@ -149,8 +149,8 @@ namespace FH6SkillPointOcr
         private OcrSnapshot ReadPaddleOcr(Screenshot screenshot, string debugLabel)
         {
             EnsurePaddleOcrProcess();
-            string imageBase64 = EncodeOcrImage(screenshot, debugLabel);
-            paddleOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + imageBase64 + "\"}");
+            OcrEncodedImage image = EncodeOcrImage(screenshot, debugLabel);
+            paddleOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + image.Base64 + "\"}");
             paddleOcrProcess.StandardInput.Flush();
 
             string line = ReadBridgeLineWithTimeout(
@@ -164,7 +164,7 @@ namespace FH6SkillPointOcr
             }
 
             SaveDebugText(debugLabel, "ocr-response", line);
-            OcrSnapshot snapshot = ParseOcrJson(line, screenshot, "PaddleOCR", PaddleOcrErrorSuffix());
+            OcrSnapshot snapshot = ParseOcrJson(line, screenshot, image.Scale, "PaddleOCR", PaddleOcrErrorSuffix());
             AttachBridgeDiagnostics(snapshot, "PaddleOCR", line, paddleOcrProcess, paddleOcrPython, paddleOcrBridge, paddleOcrErrors);
             return snapshot;
         }
@@ -172,8 +172,8 @@ namespace FH6SkillPointOcr
         private OcrSnapshot ReadRapidOcr(Screenshot screenshot, string debugLabel)
         {
             EnsureRapidOcrProcess();
-            string imageBase64 = EncodeOcrImage(screenshot, debugLabel);
-            rapidOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + imageBase64 + "\"}");
+            OcrEncodedImage image = EncodeOcrImage(screenshot, debugLabel);
+            rapidOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + image.Base64 + "\"}");
             rapidOcrProcess.StandardInput.Flush();
 
             string line = ReadBridgeLineWithTimeout(
@@ -187,24 +187,25 @@ namespace FH6SkillPointOcr
             }
 
             SaveDebugText(debugLabel, "ocr-response", line);
-            OcrSnapshot snapshot = ParseOcrJson(line, screenshot, "RapidOCR", RapidOcrErrorSuffix());
+            OcrSnapshot snapshot = ParseOcrJson(line, screenshot, image.Scale, "RapidOCR", RapidOcrErrorSuffix());
             AttachBridgeDiagnostics(snapshot, "RapidOCR", line, rapidOcrProcess, rapidOcrPython, rapidOcrBridge, rapidOcrErrors);
             return snapshot;
         }
 
-        private string EncodeOcrImage(Screenshot screenshot, string debugLabel)
+        private OcrEncodedImage EncodeOcrImage(Screenshot screenshot, string debugLabel)
         {
             string imageBase64;
+            double actualScale;
             using (MemoryStream ms = new MemoryStream())
             {
-                using (Bitmap processed = PreprocessBridgeOcr(screenshot.Image))
+                using (Bitmap processed = PreprocessBridgeOcr(screenshot.Image, out actualScale))
                 {
                     SaveDebugImage(processed, debugLabel, "ocr-input");
                     processed.Save(ms, ImageFormat.Png);
                 }
                 imageBase64 = Convert.ToBase64String(ms.ToArray());
             }
-            return imageBase64;
+            return new OcrEncodedImage(imageBase64, actualScale);
         }
 
         private void SaveDebugImage(Bitmap image, string debugLabel, string suffix)
@@ -341,9 +342,10 @@ namespace FH6SkillPointOcr
             return result;
         }
 
-        private Bitmap PreprocessBridgeOcr(Bitmap source)
+        private Bitmap PreprocessBridgeOcr(Bitmap source, out double actualScale)
         {
-            double scale = Math.Max(1.0, config.OcrScale);
+            double scale = 1.0;
+            actualScale = scale;
             int width = Math.Max(1, (int)Math.Round(source.Width * scale));
             int height = Math.Max(1, (int)Math.Round(source.Height * scale));
             Bitmap result = new Bitmap(width, height, PixelFormat.Format24bppRgb);
@@ -353,6 +355,18 @@ namespace FH6SkillPointOcr
                 g.DrawImage(source, new Rectangle(0, 0, width, height));
             }
             return result;
+        }
+
+        private sealed class OcrEncodedImage
+        {
+            public readonly string Base64;
+            public readonly double Scale;
+
+            public OcrEncodedImage(string base64, double scale)
+            {
+                Base64 = base64;
+                Scale = scale;
+            }
         }
 
         private string RunTesseract(string imagePath, int psm)
@@ -722,7 +736,7 @@ namespace FH6SkillPointOcr
             }
         }
 
-        private OcrSnapshot ParseOcrJson(string rawJson, Screenshot screenshot, string engineName, string errorSuffix)
+        private OcrSnapshot ParseOcrJson(string rawJson, Screenshot screenshot, double imageScale, string engineName, string errorSuffix)
         {
             Dictionary<string, object> root = jsonSerializer.Deserialize<Dictionary<string, object>>(rawJson);
             int code = Convert.ToInt32(root["code"], CultureInfo.InvariantCulture);
@@ -745,7 +759,7 @@ namespace FH6SkillPointOcr
                         if (item == null) continue;
                         string text = Convert.ToString(item["text"], CultureInfo.InvariantCulture);
                         double confidence = item.ContainsKey("confidence") ? Convert.ToDouble(item["confidence"], CultureInfo.InvariantCulture) : -1;
-                        RectangleF rect = ParseOcrRect(item["rect"], screenshot);
+                        RectangleF rect = ParseOcrRect(item["rect"], screenshot, imageScale);
                         matches.Add(new OcrMatch(text, rect, confidence));
                     }
                 }
@@ -756,7 +770,7 @@ namespace FH6SkillPointOcr
             return new OcrSnapshot(screenshot, matches, wordLines, lineMatches);
         }
 
-        private RectangleF ParseOcrRect(object rectObj, Screenshot screenshot)
+        private RectangleF ParseOcrRect(object rectObj, Screenshot screenshot, double imageScale)
         {
             List<object> values = new List<object>();
             IEnumerable enumerable = rectObj as IEnumerable;
@@ -765,7 +779,7 @@ namespace FH6SkillPointOcr
                 foreach (object value in enumerable) values.Add(value);
             }
             if (values.Count < 4) return new RectangleF(screenshot.Left, screenshot.Top, 1, 1);
-            double scale = Math.Max(1.0, config.OcrScale);
+            double scale = imageScale > 0 ? imageScale : Math.Max(1.0, config.OcrScale);
             float left = (float)(Convert.ToDouble(values[0], CultureInfo.InvariantCulture) / scale) + screenshot.Left;
             float top = (float)(Convert.ToDouble(values[1], CultureInfo.InvariantCulture) / scale) + screenshot.Top;
             float width = (float)(Convert.ToDouble(values[2], CultureInfo.InvariantCulture) / scale);

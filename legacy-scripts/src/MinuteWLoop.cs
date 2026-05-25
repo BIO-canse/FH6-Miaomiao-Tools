@@ -61,7 +61,7 @@ internal static class MinuteWLoop
         Console.Title = "MinuteWLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");
         Console.WriteLine(HandoffStart ? "衔接启动：跳过开局 10 秒等待。" : "启动后先等待 10 秒。");
-        Console.WriteLine("主循环：确保 W 松开，按 Enter，1 秒后按住 W，Enter 后等待 37 秒，松开 W，按 X，等待 1 秒，按 Enter，等待 10 秒。");
+        Console.WriteLine("主循环：确保 W 松开，按 Enter，1 秒后按住 W，Enter 后等待 40 秒，松开 W，按 X，等待 1 秒，按 Enter，等待 10 秒。");
         Console.WriteLine("W 不会在 Enter 前按下，避免菜单选项被 W 移动。");
         if (TrackSkillPoints)
         {
