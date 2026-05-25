@@ -25,14 +25,16 @@ namespace FH6SkillPointOcr
             List<OcrMatch> matches = ocr.Find(snapshot, config.TargetVehicleText);
             matches.AddRange(FindLatinContainsMatches(snapshot, config.TargetVehicleText));
             matches.AddRange(ocr.FindLatinFuzzy(snapshot, config.TargetVehicleText, FH6AutomationConstants.Ocr.TargetVehicleLatinFuzzyDistance));
-            return DeduplicateOcrMatches(matches);
+            return OcrMatchFilter.FilterUiTextMatches(matches, config.TargetVehicleText);
         }
 
         private List<OcrMatch> FindNewBadgeMatches(OcrSnapshot snapshot)
         {
             List<OcrMatch> matches = ocr.Find(snapshot, config.NewBadgeText);
-            if (matches.Count > 0) return matches;
-            return ocr.FindCjkFuzzy(snapshot, config.NewBadgeText, FH6AutomationConstants.Ocr.NewBadgeCjkMinCommonChars, FH6AutomationConstants.Ocr.NewBadgeCjkMaxNormalizedLength);
+            if (matches.Count > 0) return OcrMatchFilter.FilterUiTextMatches(matches, config.NewBadgeText);
+            return OcrMatchFilter.FilterUiTextMatches(
+                ocr.FindCjkFuzzy(snapshot, config.NewBadgeText, FH6AutomationConstants.Ocr.NewBadgeCjkMinCommonChars, FH6AutomationConstants.Ocr.NewBadgeCjkMaxNormalizedLength),
+                config.NewBadgeText);
         }
 
         private List<OcrMatch> FindManufacturerMatches(OcrSnapshot snapshot)
@@ -43,18 +45,20 @@ namespace FH6SkillPointOcr
         private List<OcrMatch> FindMyHorizonMatches(OcrSnapshot snapshot)
         {
             List<OcrMatch> matches = ocr.Find(snapshot, config.MyHorizonText);
-            if (matches.Count > 0) return matches;
-            return ocr.FindCjkFuzzy(snapshot, config.MyHorizonText, FH6AutomationConstants.Ocr.MyHorizonCjkMinCommonChars, FH6AutomationConstants.Ocr.MyHorizonCjkMaxNormalizedLength);
+            if (matches.Count > 0) return OcrMatchFilter.FilterUiTextMatches(matches, config.MyHorizonText);
+            return OcrMatchFilter.FilterUiTextMatches(
+                ocr.FindCjkFuzzy(snapshot, config.MyHorizonText, FH6AutomationConstants.Ocr.MyHorizonCjkMinCommonChars, FH6AutomationConstants.Ocr.MyHorizonCjkMaxNormalizedLength),
+                config.MyHorizonText);
         }
 
         private List<OcrMatch> FindDeleteMarkerMatches(OcrSnapshot snapshot)
         {
-            return ocr.Find(snapshot, config.DeleteMarkerText);
+            return OcrMatchFilter.FilterUiTextMatches(ocr.Find(snapshot, config.DeleteMarkerText), config.DeleteMarkerText);
         }
 
         private List<OcrMatch> FindDriveMarkerMatches(OcrSnapshot snapshot)
         {
-            return ocr.Find(snapshot, config.DriveMarkerText);
+            return OcrMatchFilter.FilterUiTextMatches(ocr.Find(snapshot, config.DriveMarkerText), config.DriveMarkerText);
         }
 
         private List<OcrMatch> FindConfiguredCjkTextMatches(OcrSnapshot snapshot, string text)
@@ -70,35 +74,12 @@ namespace FH6SkillPointOcr
                 text,
                 Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
                 Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
-            return DeduplicateOcrMatches(matches);
+            return OcrMatchFilter.FilterUiTextMatches(matches, text);
         }
 
         private OcrMatch ChooseUiTextMatch(List<OcrMatch> matches, string text)
         {
-            string needle = NormalizeUiText(text);
-            List<OcrMatch> exact = matches
-                .Where(m => NormalizeUiText(m.Text) == needle)
-                .OrderBy(SortLeftTop)
-                .ToList();
-            if (exact.Count > 0) return exact.First();
-
-            return matches
-                .OrderBy(m => NormalizeUiText(m.Text).Length)
-                .ThenBy(m => m.Rect.Width * m.Rect.Height)
-                .ThenBy(SortLeftTop)
-                .First();
-        }
-
-        private static string NormalizeUiText(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            StringBuilder sb = new StringBuilder();
-            foreach (char ch in text)
-            {
-                if (char.IsWhiteSpace(ch)) continue;
-                sb.Append(char.ToUpperInvariant(ch));
-            }
-            return sb.ToString();
+            return OcrMatchFilter.ChooseUiTextMatch(matches, text);
         }
 
         private List<OcrMatch> FindLatinContainsMatches(OcrSnapshot snapshot, string text)
@@ -146,28 +127,6 @@ namespace FH6SkillPointOcr
             {
                 foreach (OcrMatch match in snapshot.Lines) yield return match;
             }
-        }
-
-        private static List<OcrMatch> DeduplicateOcrMatches(IEnumerable<OcrMatch> matches)
-        {
-            List<OcrMatch> result = new List<OcrMatch>();
-            HashSet<string> seen = new HashSet<string>();
-            if (matches == null) return result;
-
-            foreach (OcrMatch match in matches)
-            {
-                if (match == null) continue;
-                string key = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0}:{1}:{2}:{3}",
-                    (int)Math.Round(match.Rect.Left / 3),
-                    (int)Math.Round(match.Rect.Top / 3),
-                    (int)Math.Round(match.Rect.Right / 3),
-                    (int)Math.Round(match.Rect.Bottom / 3));
-                if (seen.Add(key)) result.Add(match);
-            }
-
-            return result;
         }
 
         private static string NormalizeLatinLoose(string text)

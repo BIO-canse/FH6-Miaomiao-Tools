@@ -209,40 +209,20 @@ namespace FH6SkillPointOcr
         private static List<OcrMatch> FindConfiguredCjkTextMatches(Config config, OcrReader ocr, OcrSnapshot snapshot, string text)
         {
             List<OcrMatch> matches = ocr.Find(snapshot, text);
-            if (matches.Count > 0) return matches;
-            return ocr.FindCjkFuzzy(
-                snapshot,
-                text,
-                Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
-                Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength));
+            if (matches.Count == 0)
+            {
+                matches.AddRange(ocr.FindCjkFuzzy(
+                    snapshot,
+                    text,
+                    Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
+                    Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
+            }
+            return OcrMatchFilter.FilterUiTextMatches(matches, text);
         }
 
         private static OcrMatch ChooseUiTextMatch(List<OcrMatch> matches, string text)
         {
-            string needle = NormalizeUiText(text);
-            List<OcrMatch> exact = matches
-                .Where(m => NormalizeUiText(m.Text) == needle)
-                .OrderBy(m => m.Rect.Left * FH6AutomationConstants.Ranking.LeftFirstWeight + m.Rect.Top)
-                .ToList();
-            if (exact.Count > 0) return exact.First();
-
-            return matches
-                .OrderBy(m => NormalizeUiText(m.Text).Length)
-                .ThenBy(m => m.Rect.Width * m.Rect.Height)
-                .ThenBy(m => m.Rect.Left * FH6AutomationConstants.Ranking.LeftFirstWeight + m.Rect.Top)
-                .First();
-        }
-
-        private static string NormalizeUiText(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "";
-            StringBuilder sb = new StringBuilder();
-            foreach (char ch in text)
-            {
-                if (char.IsWhiteSpace(ch)) continue;
-                sb.Append(char.ToUpperInvariant(ch));
-            }
-            return sb.ToString();
+            return OcrMatchFilter.ChooseUiTextMatch(matches, text);
         }
 
         private static void MoveMouseToScreenBottomRight(InputController input, ScreenCapture capture, string reason)

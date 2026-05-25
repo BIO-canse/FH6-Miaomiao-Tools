@@ -93,7 +93,7 @@ namespace FH6SkillPointOcr
                     Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
                     Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
             }
-            return DeduplicateOcrMatches(matches);
+            return OcrMatchFilter.FilterUiTextMatches(matches, text);
         }
 
         private static List<OcrMatch> FindCjkLooseMatches(OcrSnapshot snapshot, string text, int minCommonChars, int maxNormalizedLength)
@@ -126,28 +126,6 @@ namespace FH6SkillPointOcr
             {
                 foreach (OcrMatch match in snapshot.Lines) yield return match;
             }
-        }
-
-        private static List<OcrMatch> DeduplicateOcrMatches(IEnumerable<OcrMatch> matches)
-        {
-            List<OcrMatch> result = new List<OcrMatch>();
-            HashSet<string> seen = new HashSet<string>();
-            if (matches == null) return result;
-
-            foreach (OcrMatch match in matches)
-            {
-                if (match == null) continue;
-                string key = string.Format(
-                    CultureInfo.InvariantCulture,
-                    "{0}:{1}:{2}:{3}",
-                    (int)Math.Round(match.Rect.Left / 3),
-                    (int)Math.Round(match.Rect.Top / 3),
-                    (int)Math.Round(match.Rect.Right / 3),
-                    (int)Math.Round(match.Rect.Bottom / 3));
-                if (seen.Add(key)) result.Add(match);
-            }
-
-            return result;
         }
 
         private static void WriteCapturedMarker(string path, Screenshot shot)
