@@ -237,6 +237,7 @@ namespace FH6SkillPointOcr
                 sb.AppendLine("manufacturer_cells=" + FormatCellSet(observation.ManufacturerCells));
                 sb.AppendLine("blank_cells=" + FormatCellSet(observation.BlankCells));
                 sb.AppendLine("performance_scores=" + FormatScoreMap(observation.PerformanceScores));
+                sb.AppendLine("performance_classes=" + FormatStringMap(observation.PerformanceClasses));
                 AppendMatches(sb, "target_matches", observation.TargetMatches);
                 AppendMatches(sb, "new_badge_matches", observation.NewBadgeMatches);
                 AppendMatches(sb, "manufacturer_matches", observation.ManufacturerMatches);
@@ -328,6 +329,16 @@ namespace FH6SkillPointOcr
                 " ",
                 scores.OrderBy(p => p.Key.Col).ThenBy(p => p.Key.Row)
                     .Select(p => FormatCellMapping(p.Key) + "=" + p.Value.ToString(CultureInfo.InvariantCulture))
+                    .ToArray());
+        }
+
+        private string FormatStringMap(Dictionary<CellKey, string> values)
+        {
+            if (values == null || values.Count == 0) return "";
+            return string.Join(
+                " ",
+                values.OrderBy(p => p.Key.Col).ThenBy(p => p.Key.Row)
+                    .Select(p => FormatCellMapping(p.Key) + "=" + (string.IsNullOrEmpty(p.Value) ? "-" : p.Value))
                     .ToArray());
         }
 

@@ -200,6 +200,7 @@ namespace FH6SkillPointOcr
                 driveCells,
                 manufacturerCells,
                 new Dictionary<CellKey, int>(),
+                new Dictionary<CellKey, string>(),
                 new HashSet<CellKey>());
         }
 
@@ -212,6 +213,7 @@ namespace FH6SkillPointOcr
             HashSet<CellKey> driveCells,
             HashSet<CellKey> manufacturerCells,
             Dictionary<CellKey, int> performanceScores,
+            Dictionary<CellKey, string> performanceClasses,
             HashSet<CellKey> blankCells)
         {
             ApplyObservationInternal(
@@ -225,6 +227,7 @@ namespace FH6SkillPointOcr
                 driveCells,
                 manufacturerCells,
                 performanceScores,
+                performanceClasses,
                 blankCells,
                 "FULL_SCAN_SET",
                 "full_visible_observation");
@@ -240,6 +243,7 @@ namespace FH6SkillPointOcr
             HashSet<CellKey> driveCells,
             HashSet<CellKey> manufacturerCells,
             Dictionary<CellKey, int> performanceScores,
+            Dictionary<CellKey, string> performanceClasses,
             HashSet<CellKey> blankCells)
         {
             ApplyObservationInternal(
@@ -253,6 +257,7 @@ namespace FH6SkillPointOcr
                 driveCells,
                 manufacturerCells,
                 performanceScores,
+                performanceClasses,
                 blankCells,
                 "TABLE_BUILD_SET",
                 "table_build_observation");
@@ -269,6 +274,7 @@ namespace FH6SkillPointOcr
             HashSet<CellKey> driveCells,
             HashSet<CellKey> manufacturerCells,
             Dictionary<CellKey, int> performanceScores,
+            Dictionary<CellKey, string> performanceClasses,
             HashSet<CellKey> blankCells,
             string logPrefix,
             string persistReason)
@@ -283,6 +289,7 @@ namespace FH6SkillPointOcr
             driveCells = driveCells ?? new HashSet<CellKey>();
             manufacturerCells = manufacturerCells ?? new HashSet<CellKey>();
             performanceScores = performanceScores ?? new Dictionary<CellKey, int>();
+            performanceClasses = performanceClasses ?? new Dictionary<CellKey, string>();
             blankCells = blankCells ?? new HashSet<CellKey>();
 
             for (int col = 0; col < visibleColumns; col++)
@@ -302,6 +309,8 @@ namespace FH6SkillPointOcr
                     bool isManufacturer = manufacturerCells.Contains(local) || isTarget;
                     int performanceScore;
                     if (!performanceScores.TryGetValue(local, out performanceScore)) performanceScore = -1;
+                    string performanceClass;
+                    if (!performanceClasses.TryGetValue(local, out performanceClass)) performanceClass = "";
 
                     string newState = FH6AutomationConstants.VehicleState.None;
                     if (isValidNew) newState = FH6AutomationConstants.VehicleState.ValidNewName;
@@ -317,6 +326,7 @@ namespace FH6SkillPointOcr
                     next.IsTarget = isTarget;
                     next.NewState = newState;
                     next.PerformanceScore = performanceScore;
+                    next.PerformanceClass = performanceClass ?? "";
                     next.LastSeenOffset = CurrentOffset;
                     next.SeenCount = 1;
 
@@ -324,7 +334,7 @@ namespace FH6SkillPointOcr
                     if (cells.TryGetValue(global, out old))
                     {
                         next.SeenCount = old.SeenCount + 1;
-                        if (old.IsManufacturer == next.IsManufacturer && old.IsTarget == next.IsTarget && old.NewState == next.NewState && old.LastSeenOffset == next.LastSeenOffset && old.PerformanceScore == next.PerformanceScore)
+                        if (old.IsManufacturer == next.IsManufacturer && old.IsTarget == next.IsTarget && old.NewState == next.NewState && old.LastSeenOffset == next.LastSeenOffset && old.PerformanceScore == next.PerformanceScore && old.PerformanceClass == next.PerformanceClass)
                         {
                             SetCellWithLog(global, next, logPrefix + "_REFRESH", string.Format(CultureInfo.InvariantCulture, "local_row={0} local_col={1} obs={2}", row, col, ObservationCount));
                             continue;
@@ -335,13 +345,14 @@ namespace FH6SkillPointOcr
                     EditCount++;
                     Log(string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0} row={1} col={2} subaru={3} target={4} state={5} score={6} offset={7} obs={8}",
+                        "{0} row={1} col={2} subaru={3} target={4} state={5} class={6} score={7} offset={8} obs={9}",
                         logPrefix,
                         row,
                         global.Col,
                         isManufacturer,
                         isTarget,
                         StateCode(next),
+                        string.IsNullOrEmpty(performanceClass) ? "-" : performanceClass,
                         performanceScore,
                         CurrentOffset,
                         ObservationCount));

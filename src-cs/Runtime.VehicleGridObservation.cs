@@ -20,7 +20,12 @@ namespace FH6SkillPointOcr
             observation.DeleteMarkerMatches = FindDeleteMarkerMatches(snapshot);
             observation.DriveMarkerMatches = FindDriveMarkerMatches(snapshot);
             observation.PerformanceScoreMatches = FindPerformanceScoreMatches(snapshot);
-            observation.PerformanceScores = MapPerformanceScores(snapshot);
+            Dictionary<CellKey, PerformanceReading> performanceReadings = MapPerformanceReadings(snapshot);
+            foreach (KeyValuePair<CellKey, PerformanceReading> pair in performanceReadings)
+            {
+                observation.PerformanceScores[pair.Key] = pair.Value.Score;
+                if (!string.IsNullOrEmpty(pair.Value.ClassName)) observation.PerformanceClasses[pair.Key] = pair.Value.ClassName;
+            }
 
             observation.TargetCells = MapTargetCells(observation.TargetMatches);
             observation.ManufacturerCells = MapVisibleCellsIncludingSelectedCell(observation.ManufacturerMatches);
@@ -77,6 +82,7 @@ namespace FH6SkillPointOcr
                 observation.DriveCells,
                 observation.ManufacturerCells,
                 observation.PerformanceScores,
+                observation.PerformanceClasses,
                 observation.BlankCells);
         }
 
@@ -101,24 +107,28 @@ namespace FH6SkillPointOcr
                 + suffix;
         }
 
-        private Dictionary<CellKey, int> MapPerformanceScores(OcrSnapshot snapshot)
+        private Dictionary<CellKey, PerformanceReading> MapPerformanceReadings(OcrSnapshot snapshot)
         {
-            Dictionary<CellKey, int> result = new Dictionary<CellKey, int>();
+            Dictionary<CellKey, PerformanceReading> result = new Dictionary<CellKey, PerformanceReading>();
             if (snapshot == null || snapshot.Words == null) return result;
 
             foreach (OcrMatch match in snapshot.Words)
             {
+                string performanceClass;
                 int score;
-                if (!TryParsePerformanceScore(match.Text, out score)) continue;
+                if (!TryParsePerformanceReading(match.Text, out performanceClass, out score)) continue;
 
                 CellKey cell;
                 Point center = match.RectCenter();
                 if (!grid.MapPoint(center.X, center.Y, out cell)) continue;
+                if (!IsPerformanceScorePosition(match, cell)) continue;
 
-                int old;
-                if (!result.TryGetValue(cell, out old) || score > old)
+                PerformanceReading old;
+                if (!result.TryGetValue(cell, out old) ||
+                    score > old.Score ||
+                    (score == old.Score && string.IsNullOrEmpty(old.ClassName) && !string.IsNullOrEmpty(performanceClass)))
                 {
-                    result[cell] = score;
+                    result[cell] = new PerformanceReading(performanceClass, score);
                 }
             }
 
@@ -132,8 +142,14 @@ namespace FH6SkillPointOcr
 
             foreach (OcrMatch match in snapshot.Words)
             {
+                string performanceClass;
                 int score;
-                if (TryParsePerformanceScore(match.Text, out score)) result.Add(match);
+                if (!TryParsePerformanceReading(match.Text, out performanceClass, out score)) continue;
+                CellKey cell;
+                Point center = match.RectCenter();
+                if (!grid.MapPoint(center.X, center.Y, out cell)) continue;
+                if (!IsPerformanceScorePosition(match, cell)) continue;
+                result.Add(match);
             }
 
             return result;
@@ -155,15 +171,50 @@ namespace FH6SkillPointOcr
             return result;
         }
 
-        private static bool TryParsePerformanceScore(string text, out int score)
+        private bool IsPerformanceScorePosition(OcrMatch match, CellKey cell)
         {
+            if (match == null) return false;
+            if (grid.CellStepX <= 0 || grid.CellStepY <= 0) return false;
+
+            Point center = match.RectCenter();
+            double cellLeft = grid.AnchorOriginX + cell.Col * grid.CellStepX;
+            double cellTop = grid.AnchorOriginY + cell.Row * grid.CellStepY;
+            double relativeX = (center.X - cellLeft) / grid.CellStepX;
+            double relativeY = (center.Y - cellTop) / grid.CellStepY;
+            return relativeX >= 0.5 && relativeY >= 0.5;
+        }
+
+        private static bool TryParsePerformanceReading(string text, out string performanceClass, out int score)
+        {
+            performanceClass = "";
             score = 0;
             if (string.IsNullOrWhiteSpace(text)) return false;
 
-            Match match = Regex.Match(text, @"(?<!\d)([1-9]\d{2})(?!\d)");
+            string normalized = Regex.Replace((text ?? "").Trim().ToUpperInvariant(), @"\s+", " ");
+
+            Match match = Regex.Match(normalized, @"^([1-9]\d{2})$");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out score))
+            {
+                return score > 0 && score < 1000;
+            }
+
+            match = Regex.Match(normalized, @"^(S2|S1|S|A|B|C|D|R)\s*([1-9]\d{2})$");
             if (!match.Success) return false;
-            if (!int.TryParse(match.Groups[1].Value, out score)) return false;
+            performanceClass = match.Groups[1].Value;
+            if (!int.TryParse(match.Groups[2].Value, out score)) return false;
             return score > 0 && score < 1000;
+        }
+
+        private sealed class PerformanceReading
+        {
+            public readonly string ClassName;
+            public readonly int Score;
+
+            public PerformanceReading(string className, int score)
+            {
+                ClassName = className ?? "";
+                Score = score;
+            }
         }
     }
 }

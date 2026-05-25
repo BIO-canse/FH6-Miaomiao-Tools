@@ -196,6 +196,7 @@ namespace FH6SkillPointOcr
                     new HashSet<CellKey>(),
                     new HashSet<CellKey>(),
                     new Dictionary<CellKey, int>(),
+                    new Dictionary<CellKey, string>(),
                     blank);
 
                 CellKey lastTarget;
@@ -224,6 +225,7 @@ namespace FH6SkillPointOcr
                     new HashSet<CellKey>(),
                     manufacturer,
                     new Dictionary<CellKey, int>(),
+                    new Dictionary<CellKey, string>(),
                     new HashSet<CellKey>());
 
                 if (!subaruList.IsTargetModelBoundaryReached(out lastTarget, out nextCell))
@@ -265,6 +267,7 @@ namespace FH6SkillPointOcr
                     new HashSet<CellKey>(),
                     manufacturer,
                     new Dictionary<CellKey, int>(),
+                    new Dictionary<CellKey, string>(),
                     new HashSet<CellKey>());
 
                 list.ResetView();
@@ -1019,11 +1022,11 @@ namespace FH6SkillPointOcr
                 subaruBoundaryReason = subaruBoundaryReached ? "当前车辆列表区域没有识别到斯巴鲁" : "";
                 if (tableBuild)
                 {
-                    vehicleList.ApplyTableBuildObservation(visibleColumns, ignoredLeadingColumns, targets, validNew, invalidNew, deletable, drive, manufacturers, performanceScores, new HashSet<CellKey>());
+                    vehicleList.ApplyTableBuildObservation(visibleColumns, ignoredLeadingColumns, targets, validNew, invalidNew, deletable, drive, manufacturers, performanceScores, new Dictionary<CellKey, string>(), new HashSet<CellKey>());
                 }
                 else
                 {
-                    vehicleList.ApplyFullObservation(visibleColumns, targets, validNew, invalidNew, deletable, drive, manufacturers, performanceScores, new HashSet<CellKey>());
+                    vehicleList.ApplyFullObservation(visibleColumns, targets, validNew, invalidNew, deletable, drive, manufacturers, performanceScores, new Dictionary<CellKey, string>(), new HashSet<CellKey>());
                 }
                 trace.Add("ocr offset=" + vehicleList.CurrentOffset + " tableBuild=" + tableBuild + " ignoredLeading=" + ignoredLeadingColumns + " manufacturers=" + manufacturers.Count + " targets=" + targets.Count + " 3=" + validNew.Count + " 4=" + deletable.Count + " scores=" + performanceScores.Count);
             }

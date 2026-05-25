@@ -22,5 +22,6 @@ namespace FH6SkillPointOcr
         public HashSet<CellKey> DriveCells = new HashSet<CellKey>();
         public HashSet<CellKey> BlankCells = new HashSet<CellKey>();
         public Dictionary<CellKey, int> PerformanceScores = new Dictionary<CellKey, int>();
+        public Dictionary<CellKey, string> PerformanceClasses = new Dictionary<CellKey, string>();
     }
 }

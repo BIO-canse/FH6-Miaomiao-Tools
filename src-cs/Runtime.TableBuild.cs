@@ -69,6 +69,7 @@ namespace FH6SkillPointOcr
                 observation.DriveCells,
                 observation.ManufacturerCells,
                 observation.PerformanceScores,
+                observation.PerformanceClasses,
                 observation.BlankCells);
 
             SetOcrFields(

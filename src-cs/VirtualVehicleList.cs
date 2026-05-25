@@ -738,6 +738,7 @@ namespace FH6SkillPointOcr
             next.IsTarget = true;
             next.NewState = FH6AutomationConstants.VehicleState.DeletableName;
             next.PerformanceScore = 600;
+            next.PerformanceClass = DefaultPerformanceClassForScore(600);
             next.LastSeenOffset = CurrentOffset;
             next.SeenCount = cells.TryGetValue(global, out old) ? old.SeenCount + 1 : 1;
             SetCellWithLog(global, next, "PROCESSED", string.Format(CultureInfo.InvariantCulture, "local_row={0} local_col={1}", localCell.Row, localCell.Col));
@@ -1185,6 +1186,7 @@ namespace FH6SkillPointOcr
             clone.IsTarget = cell.IsTarget;
             clone.NewState = cell.NewState;
             clone.PerformanceScore = cell.PerformanceScore;
+            clone.PerformanceClass = cell.PerformanceClass;
             clone.LastSeenOffset = cell.LastSeenOffset;
             clone.SeenCount = cell.SeenCount;
             return clone;
@@ -1225,11 +1227,12 @@ namespace FH6SkillPointOcr
             if (cell == null) return "-";
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "state={0},subaru={1},target={2},new={3},score={4},seen={5},lastOffset={6}",
+                "state={0},subaru={1},target={2},new={3},class={4},score={5},seen={6},lastOffset={7}",
                 StateCode(cell),
                 cell.IsManufacturer,
                 cell.IsTarget,
                 string.IsNullOrEmpty(cell.NewState) ? FH6AutomationConstants.VehicleState.None : cell.NewState,
+                string.IsNullOrEmpty(cell.PerformanceClass) ? "-" : cell.PerformanceClass,
                 cell.PerformanceScore,
                 cell.SeenCount,
                 cell.LastSeenOffset);
@@ -1290,6 +1293,7 @@ namespace FH6SkillPointOcr
                 cell.IsTarget = true;
                 cell.NewState = newState;
                 cell.PerformanceScore = performanceScore;
+                cell.PerformanceClass = DefaultPerformanceClassForScore(performanceScore);
                 cell.LastSeenOffset = CurrentOffset;
                 cell.SeenCount = 1;
                 shifted[key] = cell;
@@ -1356,6 +1360,10 @@ namespace FH6SkillPointOcr
                     cell.PerformanceScore = item.TryGetValue("performance_score", out scoreValue)
                         ? Convert.ToInt32(scoreValue, CultureInfo.InvariantCulture)
                         : -1;
+                    object classValue;
+                    cell.PerformanceClass = item.TryGetValue("performance_class", out classValue)
+                        ? Convert.ToString(classValue, CultureInfo.InvariantCulture)
+                        : "";
 
                     object stateValue;
                     if (item.TryGetValue("state", out stateValue))
@@ -1366,6 +1374,8 @@ namespace FH6SkillPointOcr
                             cell.IsManufacturer = true;
                             cell.IsTarget = true;
                             cell.NewState = FH6AutomationConstants.VehicleState.DeletableName;
+                            if (cell.PerformanceScore < 0) cell.PerformanceScore = 600;
+                            if (string.IsNullOrEmpty(cell.PerformanceClass)) cell.PerformanceClass = DefaultPerformanceClassForScore(cell.PerformanceScore);
                         }
                         else if (state == FH6AutomationConstants.VehicleState.ValidNew)
                         {
@@ -1373,6 +1383,7 @@ namespace FH6SkillPointOcr
                             cell.IsTarget = true;
                             cell.NewState = FH6AutomationConstants.VehicleState.ValidNewName;
                             if (cell.PerformanceScore < 0) cell.PerformanceScore = 600;
+                            if (string.IsNullOrEmpty(cell.PerformanceClass)) cell.PerformanceClass = DefaultPerformanceClassForScore(cell.PerformanceScore);
                         }
                         else if (state == FH6AutomationConstants.VehicleState.Target)
                         {
@@ -1386,6 +1397,7 @@ namespace FH6SkillPointOcr
                             cell.IsTarget = true;
                             cell.NewState = FH6AutomationConstants.VehicleState.None;
                             if (cell.PerformanceScore < 0) cell.PerformanceScore = 900;
+                            if (string.IsNullOrEmpty(cell.PerformanceClass)) cell.PerformanceClass = DefaultPerformanceClassForScore(cell.PerformanceScore);
                         }
                         else if (state == FH6AutomationConstants.VehicleState.Blank)
                         {
@@ -1407,6 +1419,7 @@ namespace FH6SkillPointOcr
                         cell.IsTarget = true;
                         cell.NewState = FH6AutomationConstants.VehicleState.None;
                         if (cell.PerformanceScore < 0) cell.PerformanceScore = 900;
+                        if (string.IsNullOrEmpty(cell.PerformanceClass)) cell.PerformanceClass = DefaultPerformanceClassForScore(cell.PerformanceScore);
                     }
                     SetCellWithLog(new CellKey(cell.Row, cell.Col), cell, "LOAD_EXISTING_CELL", "snapshot");
                 }
@@ -1472,6 +1485,7 @@ namespace FH6SkillPointOcr
                     item["is_target"] = cell.IsTarget;
                     item["new_state"] = cell.NewState ?? FH6AutomationConstants.VehicleState.None;
                     item["performance_score"] = cell.PerformanceScore;
+                    item["performance_class"] = string.IsNullOrEmpty(cell.PerformanceClass) ? "" : cell.PerformanceClass;
                     item["last_seen_offset"] = cell.LastSeenOffset;
                     item["seen_count"] = cell.SeenCount;
                     items.Add(item);
@@ -1506,6 +1520,13 @@ namespace FH6SkillPointOcr
             string directory = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
         }
+
+        private static string DefaultPerformanceClassForScore(int score)
+        {
+            if (score == 900) return "S2";
+            if (score == 600) return "B";
+            return "";
+        }
     }
 
     internal sealed class VirtualVehicleCell
@@ -1516,6 +1537,7 @@ namespace FH6SkillPointOcr
         public bool IsManufacturer;
         public string NewState;
         public int PerformanceScore = -1;
+        public string PerformanceClass = "";
         public int LastSeenOffset;
         public int SeenCount;
     }
