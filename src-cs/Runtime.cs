@@ -127,6 +127,7 @@ namespace FH6SkillPointOcr
             }
             finally
             {
+                KillUiCacheOcrGuards();
                 overlay.Stop();
                 ocr.Dispose();
             }

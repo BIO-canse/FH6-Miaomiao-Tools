@@ -21,7 +21,7 @@ namespace FH6SkillPointOcr
         private void FindTextAndClick(string text, string label, bool moveToIdleAfterClick)
         {
             string cacheKey = UiClickCacheKey("text", label, text);
-            if (TryClickCachedUiPoint(cacheKey, label, moveToIdleAfterClick))
+            if (TryClickCachedUiPoint(cacheKey, label, text, moveToIdleAfterClick))
             {
                 return;
             }
@@ -58,13 +58,14 @@ namespace FH6SkillPointOcr
             return category + "|" + label + "|" + text;
         }
 
-        private bool TryClickCachedUiPoint(string cacheKey, string label, bool moveToIdleAfterClick)
+        private bool TryClickCachedUiPoint(string cacheKey, string label, string text, bool moveToIdleAfterClick)
         {
             Point point;
             if (!uiClickCache.TryGetValue(cacheKey, out point)) return false;
 
             DebugGate("ui click cache " + label, "复用 UI 坐标 " + label + " (" + point.X + "," + point.Y + ")");
             SetOcrSummary("UI坐标缓存: " + label + " -> " + point.X + "," + point.Y + "，等待 0.5 秒后点击");
+            StartUiCacheOcrGuard(label, text);
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             input.MoveTo(point.X, point.Y);
             input.Click();

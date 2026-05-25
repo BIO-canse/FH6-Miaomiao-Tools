@@ -43,6 +43,7 @@ namespace FH6AutomationShared
             public const int UiOcrStableWaitMs = 1000;
             public const int SleepSliceMs = 50;
             public const int FullAutoSleepSliceMs = 100;
+            public const int UiCacheGuardCaptureWaitMs = 700;
             public const int DebugKeyPollMs = 30;
             public const int ManufacturerRecordPollMs = 20;
             public const int OverlayHideBeforeCaptureMs = 180;
@@ -140,6 +141,7 @@ namespace FH6AutomationShared
             public const string FullAutoExe = "FH6FullAuto.exe";
             public const string BlueprintCycleTestExe = "FH6BlueprintCycleTest.exe";
             public const string EmergencyStopWatcherExe = "FH6EmergencyStopWatcher.exe";
+            public const string UiCacheGuardExe = "FH6UiCacheOcrGuard.exe";
             public const string MinuteLoopExe = "MinuteWLoop.exe";
             public const string BuyLoopExe = "SpaceDownEnterLoop.exe";
             public const string SkillSafeStop = "skill-safe-stop.request";

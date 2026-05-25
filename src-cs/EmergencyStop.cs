@@ -17,6 +17,7 @@ namespace FH6SkillPointOcr
                 Path.GetFileNameWithoutExtension(FH6AutomationConstants.Files.FullAutoExe),
                 Path.GetFileNameWithoutExtension(FH6AutomationConstants.Files.BlueprintCycleTestExe),
                 Path.GetFileNameWithoutExtension(FH6AutomationConstants.Files.EmergencyStopWatcherExe),
+                Path.GetFileNameWithoutExtension(FH6AutomationConstants.Files.UiCacheGuardExe),
                 Path.GetFileNameWithoutExtension(FH6AutomationConstants.Files.MinuteLoopExe),
                 Path.GetFileNameWithoutExtension(FH6AutomationConstants.Files.BuyLoopExe),
                 "FH6BuyPreludeStepDebug"

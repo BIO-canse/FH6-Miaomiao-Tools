@@ -55,7 +55,7 @@ namespace FH6SkillPointOcr
             string cacheKey = UiClickCacheKey("text", cacheLabel, config.ManufacturerText);
             ScrollManufacturerList(config.ManufacturerScrollTicks, "manufacturer list scroll focus", "滚动后检查 " + cacheLabel + " 坐标缓存");
             SetStatus("manufacturer cache check", "滚动已完成，检查 " + cacheLabel + " 坐标缓存");
-            if (TryClickCachedUiPoint(cacheKey, cacheLabel, moveToIdleAfterClick))
+            if (TryClickCachedUiPoint(cacheKey, cacheLabel, config.ManufacturerText, moveToIdleAfterClick))
             {
                 return;
             }

@@ -189,6 +189,7 @@ namespace FH6SkillPointOcr
             Stopwatch sw = Stopwatch.StartNew();
             while (sw.ElapsedMilliseconds < ms)
             {
+                PollUiCacheOcrGuards();
                 ThrowIfFullAutoSafeStopWithoutChild();
                 input.SleepMs(Math.Min(
                     FH6AutomationConstants.Timing.FullAutoSleepSliceMs,
@@ -214,6 +215,7 @@ namespace FH6SkillPointOcr
 
         private void FullAutoCheckPoint()
         {
+            PollUiCacheOcrGuards();
             if (task == AutomationTask.FullAuto) ThrowIfFullAutoSafeStopWithoutChild();
         }
 

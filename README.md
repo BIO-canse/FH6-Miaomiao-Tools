@@ -27,7 +27,7 @@
 - `EnterTapLoop.exe`：快速开启大量抽奖、超级抽奖。
 - `README.pdf` / `README.md` / `使用说明.txt`：使用说明，优先看带图的 `README.pdf`。
 
-`bin/`、`runtime/`、`config/`、`assets/` 是程序运行需要的内部文件夹，不要删除或移动。`debug/`、`state/` 会保存自动生成的日志、OCR 失败信息和虚拟列表状态；如果程序出问题，请保留这两个文件夹，方便排查。未处理异常会写入 `debug/last-error.txt`，当天完整错误追加日志在 `debug/error-log-YYYYMMDD.log`。
+`bin/`、`runtime/`、`config/`、`assets/` 是程序运行需要的内部文件夹，不要删除或移动。`debug/`、`state/` 会保存自动生成的日志、OCR 失败信息和虚拟列表状态；如果程序出问题，请保留这两个文件夹，方便排查。未处理异常会写入 `debug/last-error.txt`，当天完整错误追加日志在 `debug/error-log-YYYYMMDD.log`。程序复用 UI 坐标缓存时会启动独立 OCR 保险进程校验当前页面；如果校验失败，主程序会自动退出并把现场写入 `debug/ui-cache-guard/` 和 `state/ui-cache-guard-*.result.txt`。
 
 ## 前置准备
 

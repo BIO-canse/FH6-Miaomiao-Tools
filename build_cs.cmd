@@ -31,6 +31,11 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+"%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 /main:FH6SkillPointOcr.UiCacheOcrGuardProgram /out:bin\FH6UiCacheOcrGuard.exe /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll shared-cs\*.cs src-cs\*.cs
+if errorlevel 1 (
+  pause
+  exit /b 1
+)
 if exist legacy-scripts\src\MinuteWLoop.cs (
   "%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /optimize+ /target:exe /platform:x64 /out:bin\MinuteWLoop.exe shared-cs\*.cs legacy-scripts\src\MinuteWLoop.cs
   if errorlevel 1 (
@@ -73,6 +78,7 @@ echo Built bin\FH6VehicleDeleteOcr.exe
 echo Built bin\FH6FullAuto.exe
 echo Built bin\FH6BlueprintCycleTest.exe
 echo Built bin\FH6BuyPreludeStepDebug.exe
+echo Built bin\FH6UiCacheOcrGuard.exe
 echo Built bin\MinuteWLoop.exe
 echo Built bin\AutoInputLoop.exe
 echo Built bin\EnterTapLoop.exe
