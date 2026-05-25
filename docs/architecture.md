@@ -41,6 +41,7 @@ Exit
 - OCR 启动前必须做依赖自检：除检查 Python、bridge、模型和核心 `.pyd/.dll` 文件是否存在外，还要用同一个便携 Python 启动 bridge 的 `--self-check`，确认 `PIL`、`numpy`、`paddle`、`paddleocr` 和 Paddle 原生库能实际加载。自检 stdout/stderr、进程退出码、Python 路径、模型路径、系统位数等写入 `debug/ocr-dependency-check-last.txt`，失败时停止流程，不让自动化继续到后续错误动作。
 - MediaOCR 版也必须做独立自检：列出 `Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages`，确认能创建中文和英文 OCR engine，把语言列表、最大图片尺寸和实际选中的语言写入 `debug/mediaocr-dependency-check-last.txt`。如果系统没有中文 OCR 能力，启动阶段直接提示用户改用 PaddleOCR 版或在 Windows 语言/可选功能里安装中文 OCR。
 - OCR 文本候选进入业务逻辑前必须做紧凑过滤：例如同一轮同时得到 `xxx 斯巴鲁` 和 `斯巴鲁` 时，只保留精确/最紧凑候选；没有精确候选时才使用最短包含或模糊候选，避免宽泛结果和精确结果一起进入后续逻辑造成多命中或误选。
+- 目标车型识别不能只依赖整行文本匹配。MediaOCR 可能把同一行多个车辆格子的 `IMPREZA 22B-STI` 拼成一个很宽的候选框；建表写格时必须优先使用相邻 OCR 词组生成的紧凑候选框，例如 `IMPREZA` + `22B...`，再退到整行/模糊匹配。
 - `GridGeometry` 启动时从 `config/user-settings.json` 读取并锁定，不通过 OCR 推断格子大小。
 - 全自动流程第一轮先执行定表阶段：从车库标准位进入斯巴鲁车辆列表，OCR 扫出完整虚拟表；后续点技术点、删车、买车追加和找 `900` 分开蓝图车辆直接读写虚拟表，不再每轮车辆格 OCR。
 - 制造商定位使用 OCR 和运行期坐标缓存：先执行 `Enter -> 等待 1 秒 -> Backspace -> 等待 0.5 秒` 打开制造商页面，鼠标移到屏幕中心，向下滚动 `10` 格，再优先使用本进程缓存坐标；没有缓存才整屏 OCR 找 `斯巴鲁` 并点击。车库制造商页和买车前置制造商页使用不同 UI 坐标缓存标签，不能共用缓存。

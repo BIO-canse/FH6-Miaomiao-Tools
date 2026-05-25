@@ -22,10 +22,40 @@ namespace FH6SkillPointOcr
     {
         private List<OcrMatch> FindTargetVehicleMatches(OcrSnapshot snapshot)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, config.TargetVehicleText);
+            List<OcrMatch> matches = FindTargetVehicleCompactWordMatches(snapshot);
+            matches.AddRange(ocr.Find(snapshot, config.TargetVehicleText));
             matches.AddRange(FindLatinContainsMatches(snapshot, config.TargetVehicleText));
             matches.AddRange(ocr.FindLatinFuzzy(snapshot, config.TargetVehicleText, FH6AutomationConstants.Ocr.TargetVehicleLatinFuzzyDistance));
             return OcrMatchFilter.FilterUiTextMatches(matches, config.TargetVehicleText);
+        }
+
+        private List<OcrMatch> FindTargetVehicleCompactWordMatches(OcrSnapshot snapshot)
+        {
+            List<OcrMatch> result = new List<OcrMatch>();
+            if (snapshot == null || snapshot.WordLines == null) return result;
+
+            foreach (List<OcrMatch> line in snapshot.WordLines)
+            {
+                if (line == null || line.Count == 0) continue;
+                List<OcrMatch> ordered = line.OrderBy(m => m.Rect.Left).ToList();
+                for (int i = 0; i < ordered.Count; i++)
+                {
+                    string current = NormalizeLatinLoose(ordered[i].Text);
+                    if (current != "IMPREZA") continue;
+
+                    for (int j = i + 1; j < ordered.Count && j <= i + 5; j++)
+                    {
+                        string next = NormalizeLatinLoose(ordered[j].Text);
+                        if (next == "IMPREZA") break;
+                        if (!LooksLike22B(next)) continue;
+
+                        result.Add(MergeOcrMatches(new[] { ordered[i], ordered[j] }));
+                        break;
+                    }
+                }
+            }
+
+            return OcrMatchFilter.DeduplicateByRect(result);
         }
 
         private List<OcrMatch> FindNewBadgeMatches(OcrSnapshot snapshot)
@@ -129,6 +159,28 @@ namespace FH6SkillPointOcr
             }
         }
 
+        private static OcrMatch MergeOcrMatches(IEnumerable<OcrMatch> matches)
+        {
+            List<OcrMatch> list = matches.Where(m => m != null).ToList();
+            if (list.Count == 0) return null;
+            float left = list.Min(m => m.Rect.Left);
+            float top = list.Min(m => m.Rect.Top);
+            float right = list.Max(m => m.Rect.Right);
+            float bottom = list.Max(m => m.Rect.Bottom);
+            double confidence = list.Where(m => m.Confidence >= 0).Select(m => m.Confidence).DefaultIfEmpty(-1).Average();
+            return new OcrMatch(
+                string.Join(" ", list.Select(m => m.Text).ToArray()),
+                new RectangleF(left, top, right - left, bottom - top),
+                confidence);
+        }
+
+        private static bool LooksLike22B(string normalized)
+        {
+            if (string.IsNullOrEmpty(normalized)) return false;
+            if (normalized.StartsWith("22B", StringComparison.OrdinalIgnoreCase)) return true;
+            return LevenshteinDistance(normalized, "22BSTI") <= 1;
+        }
+
         private static string NormalizeLatinLoose(string text)
         {
             if (string.IsNullOrEmpty(text)) return "";
@@ -160,6 +212,29 @@ namespace FH6SkillPointOcr
                 if (seen.Remove(ch)) count++;
             }
             return count;
+        }
+
+        private static int LevenshteinDistance(string a, string b)
+        {
+            if (a == null) a = "";
+            if (b == null) b = "";
+            int[,] dp = new int[a.Length + 1, b.Length + 1];
+            for (int i = 0; i <= a.Length; i++) dp[i, 0] = i;
+            for (int j = 0; j <= b.Length; j++) dp[0, j] = j;
+
+            for (int i = 1; i <= a.Length; i++)
+            {
+                for (int j = 1; j <= b.Length; j++)
+                {
+                    int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                    int delete = dp[i - 1, j] + 1;
+                    int insert = dp[i, j - 1] + 1;
+                    int replace = dp[i - 1, j - 1] + cost;
+                    dp[i, j] = Math.Min(Math.Min(delete, insert), replace);
+                }
+            }
+
+            return dp[a.Length, b.Length];
         }
     }
 }
