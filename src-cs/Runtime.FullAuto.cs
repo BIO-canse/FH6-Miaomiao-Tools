@@ -135,7 +135,7 @@ namespace FH6SkillPointOcr
             input.Tap("ENTER");
             FullAutoSleep(FH6AutomationConstants.Timing.FiveSecondsMs);
             input.Tap("ESC");
-            FullAutoSleep(FH6AutomationConstants.Timing.TenSecondsMs);
+            FullAutoSleep(FH6AutomationConstants.Timing.TwelveSecondsMs);
 
             RunPreCreativeCenterBuySetup();
             EnterCreativeCenterFavoriteBlueprint();
@@ -204,6 +204,7 @@ namespace FH6SkillPointOcr
             input.Tap("BACKSPACE");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             FindSubaruManufacturerByOcr("买车斯巴鲁制造商", false);
+            SetStatus("pre creative center buy setup", "已点击斯巴鲁制造商，等待 0.5 秒后按 Down 选车");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             input.Tap("DOWN");
             input.Tap("ENTER");

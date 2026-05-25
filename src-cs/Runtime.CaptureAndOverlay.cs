@@ -35,7 +35,7 @@ namespace FH6SkillPointOcr
             if (!grid.Ready) return ReadScreen();
             Rectangle region = grid.CaptureBounds(FH6AutomationConstants.Ocr.GridCapturePaddingPx);
             if (region.Width <= 0 || region.Height <= 0) return ReadScreen();
-            return ReadScreenInternal(config.OcrPsm, region);
+            return ReadScreenInternal(config.OcrPsm, region, true);
         }
 
         private OcrSnapshot ReadScreenInternal(int psm)
@@ -45,13 +45,20 @@ namespace FH6SkillPointOcr
 
         private OcrSnapshot ReadScreenInternal(int psm, Rectangle region)
         {
+            return ReadScreenInternal(psm, region, false);
+        }
+
+        private OcrSnapshot ReadScreenInternal(int psm, Rectangle region, bool splitMediaVehicleGrid)
+        {
             RefreshWindowBindingAndGrid("before capture");
             overlay.HideForCapture(config.OverlayHideBeforeCaptureMs);
             try
             {
                 Screenshot shot = region == Rectangle.Empty ? capture.Grab() : capture.Grab(region);
                 string debugLabel = SaveDebugCapture(shot, psm, region);
-                OcrSnapshot snapshot = ocr.Read(shot, psm, debugLabel);
+                OcrSnapshot snapshot = splitMediaVehicleGrid && ocr.IsMediaOcr
+                    ? ReadMediaOcrVehicleGridColumns(shot, psm, debugLabel)
+                    : ocr.Read(shot, psm, debugLabel);
                 return snapshot;
             }
             catch (Exception ex)
@@ -64,6 +71,156 @@ namespace FH6SkillPointOcr
             {
                 overlay.ShowOverlay();
             }
+        }
+
+        private OcrSnapshot ReadMediaOcrVehicleGridColumns(Screenshot fullShot, int psm, string debugLabel)
+        {
+            if (grid.VisibleColumns <= 1) return MergeMediaOcrColumnSnapshots(fullShot, new List<OcrSnapshot>());
+            List<Screenshot> columnShots = BuildVehicleGridColumnShots(fullShot);
+            if (columnShots.Count == 0)
+            {
+                return MergeMediaOcrColumnSnapshots(fullShot, new List<OcrSnapshot>());
+            }
+
+            System.Threading.Tasks.Task<OcrSnapshot>[] tasks = new System.Threading.Tasks.Task<OcrSnapshot>[columnShots.Count];
+            for (int i = 0; i < columnShots.Count; i++)
+            {
+                int workerIndex = i;
+                Screenshot columnShot = columnShots[i];
+                string columnLabel = string.IsNullOrWhiteSpace(debugLabel)
+                    ? null
+                    : debugLabel + "-media-col-" + (workerIndex + 1).ToString(CultureInfo.InvariantCulture);
+                tasks[i] = System.Threading.Tasks.Task<OcrSnapshot>.Factory.StartNew(delegate
+                {
+                    using (OcrReader columnReader = new OcrReader(config, stepDebug ? debugScreenshotDir : null))
+                    {
+                        return columnReader.Read(columnShot, psm, columnLabel);
+                    }
+                });
+            }
+
+            try
+            {
+                System.Threading.Tasks.Task.WaitAll(tasks);
+                List<OcrSnapshot> snapshots = new List<OcrSnapshot>();
+                foreach (System.Threading.Tasks.Task<OcrSnapshot> taskItem in tasks)
+                {
+                    snapshots.Add(taskItem.Result);
+                }
+                return MergeMediaOcrColumnSnapshots(fullShot, snapshots);
+            }
+            catch (AggregateException ex)
+            {
+                WriteOcrException(ex);
+                if (ex.InnerExceptions.Count == 1) throw ex.InnerExceptions[0];
+                throw;
+            }
+            finally
+            {
+                foreach (Screenshot columnShot in columnShots)
+                {
+                    try
+                    {
+                        if (columnShot != null && columnShot.Image != null) columnShot.Image.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+        private List<Screenshot> BuildVehicleGridColumnShots(Screenshot fullShot)
+        {
+            List<Screenshot> result = new List<Screenshot>();
+            if (fullShot == null || fullShot.Image == null) return result;
+            Rectangle fullBounds = new Rectangle(fullShot.Left, fullShot.Top, fullShot.Image.Width, fullShot.Image.Height);
+            for (int col = 1; col < grid.VisibleColumns; col++)
+            {
+                Rectangle columnBounds = BuildVehicleGridColumnBounds(col, fullBounds);
+                if (columnBounds.Width <= 0 || columnBounds.Height <= 0) continue;
+                result.Add(CropScreenshot(fullShot, columnBounds));
+            }
+            return result;
+        }
+
+        private Rectangle BuildVehicleGridColumnBounds(int col, Rectangle fullBounds)
+        {
+            RectangleF? union = null;
+            for (int row = 0; row < grid.Rows; row++)
+            {
+                RectangleF rect;
+                if (!grid.TryGetCellRect(new CellKey(row, col), out rect)) continue;
+                union = union.HasValue ? RectangleF.Union(union.Value, rect) : rect;
+            }
+            if (!union.HasValue) return Rectangle.Empty;
+
+            RectangleF padded = union.Value;
+            padded.Inflate(FH6AutomationConstants.Ocr.GridCapturePaddingPx, FH6AutomationConstants.Ocr.GridCapturePaddingPx);
+            Rectangle columnBounds = Rectangle.FromLTRB(
+                (int)Math.Floor(padded.Left),
+                (int)Math.Floor(padded.Top),
+                (int)Math.Ceiling(padded.Right),
+                (int)Math.Ceiling(padded.Bottom));
+            return Rectangle.Intersect(fullBounds, columnBounds);
+        }
+
+        private static Screenshot CropScreenshot(Screenshot source, Rectangle absoluteRect)
+        {
+            Rectangle localRect = new Rectangle(
+                absoluteRect.Left - source.Left,
+                absoluteRect.Top - source.Top,
+                absoluteRect.Width,
+                absoluteRect.Height);
+            Bitmap bitmap = new Bitmap(localRect.Width, localRect.Height, PixelFormat.Format24bppRgb);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                g.DrawImage(
+                    source.Image,
+                    new Rectangle(0, 0, localRect.Width, localRect.Height),
+                    localRect,
+                    GraphicsUnit.Pixel);
+            }
+            return new Screenshot(bitmap, absoluteRect.Left, absoluteRect.Top);
+        }
+
+        private static OcrSnapshot MergeMediaOcrColumnSnapshots(Screenshot fullShot, List<OcrSnapshot> snapshots)
+        {
+            List<OcrMatch> words = new List<OcrMatch>();
+            List<List<OcrMatch>> wordLines = new List<List<OcrMatch>>();
+            List<OcrMatch> lines = new List<OcrMatch>();
+            StringBuilder raw = new StringBuilder();
+            StringBuilder errors = new StringBuilder();
+            StringBuilder diagnostics = new StringBuilder();
+            diagnostics.AppendLine("engine=MediaOCRColumns");
+            diagnostics.AppendLine("columns=" + snapshots.Count.ToString(CultureInfo.InvariantCulture));
+
+            for (int i = 0; i < snapshots.Count; i++)
+            {
+                OcrSnapshot snapshot = snapshots[i];
+                if (snapshot == null) continue;
+                if (snapshot.Words != null) words.AddRange(snapshot.Words);
+                if (snapshot.WordLines != null) wordLines.AddRange(snapshot.WordLines);
+                if (snapshot.Lines != null) lines.AddRange(snapshot.Lines);
+                raw.AppendLine("----- column " + (i + 1).ToString(CultureInfo.InvariantCulture) + " -----");
+                raw.AppendLine(snapshot.RawResponse ?? "");
+                if (!string.IsNullOrWhiteSpace(snapshot.ErrorOutput)) errors.AppendLine(snapshot.ErrorOutput);
+                if (!string.IsNullOrWhiteSpace(snapshot.EngineDiagnostics))
+                {
+                    diagnostics.AppendLine("----- column " + (i + 1).ToString(CultureInfo.InvariantCulture) + " diagnostics -----");
+                    diagnostics.AppendLine(snapshot.EngineDiagnostics);
+                }
+            }
+
+            words = words.OrderBy(w => w.Rect.Top).ThenBy(w => w.Rect.Left).ToList();
+            lines = lines.OrderBy(w => w.Rect.Top).ThenBy(w => w.Rect.Left).ToList();
+            OcrSnapshot merged = new OcrSnapshot(fullShot, words, wordLines, lines);
+            merged.EngineName = "MediaOCRColumns";
+            merged.RawResponse = raw.ToString();
+            merged.ErrorOutput = errors.ToString();
+            merged.EngineDiagnostics = diagnostics.ToString();
+            merged.SkippedLeadingGridColumns = 1;
+            return merged;
         }
 
         private void EnableWindowBindingForAutomation(string reason)

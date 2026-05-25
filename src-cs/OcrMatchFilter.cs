@@ -14,7 +14,7 @@ namespace FH6SkillPointOcr
         {
             List<OcrMatch> deduped = DeduplicateByRect(matches);
             string needle = NormalizeUiText(query);
-            if (needle.Length == 0 || deduped.Count <= 1) return deduped;
+            if (needle.Length == 0 || deduped.Count == 0) return deduped;
 
             List<ScoredMatch> scored = deduped
                 .Select(match => new ScoredMatch(match, NormalizeUiText(match.Text), needle))
@@ -51,6 +51,8 @@ namespace FH6SkillPointOcr
                 .ToList();
             if (partial.Count > 0)
             {
+                if (HasCjk(needle)) return new List<OcrMatch>();
+
                 int minMissing = partial.Min(item => item.ExtraLength);
                 return partial
                     .Where(item => item.ExtraLength <= minMissing)

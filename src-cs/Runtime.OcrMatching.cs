@@ -22,11 +22,70 @@ namespace FH6SkillPointOcr
     {
         private List<OcrMatch> FindTargetVehicleMatches(OcrSnapshot snapshot)
         {
-            List<OcrMatch> matches = FindTargetVehicleCompactWordMatches(snapshot);
-            matches.AddRange(ocr.Find(snapshot, config.TargetVehicleText));
-            matches.AddRange(FindLatinContainsMatches(snapshot, config.TargetVehicleText));
-            matches.AddRange(ocr.FindLatinFuzzy(snapshot, config.TargetVehicleText, FH6AutomationConstants.Ocr.TargetVehicleLatinFuzzyDistance));
+            OcrSnapshot english = OcrLanguageFilter.English(snapshot);
+            List<OcrMatch> cellMatches = FindTargetVehicleGridCellMatches(english);
+            if (cellMatches.Count > 0) return cellMatches;
+
+            List<OcrMatch> matches = FindTargetVehicleCompactWordMatches(english);
+            matches.AddRange(ocr.Find(english, config.TargetVehicleText));
+            matches.AddRange(FindLatinContainsMatches(english, config.TargetVehicleText));
+            matches.AddRange(ocr.FindLatinFuzzy(english, config.TargetVehicleText, FH6AutomationConstants.Ocr.TargetVehicleLatinFuzzyDistance));
             return OcrMatchFilter.FilterUiTextMatches(matches, config.TargetVehicleText);
+        }
+
+        private List<OcrMatch> FindTargetVehicleGridCellMatches(OcrSnapshot snapshot)
+        {
+            List<OcrMatch> result = new List<OcrMatch>();
+            if (snapshot == null || snapshot.Words == null || !grid.Ready) return result;
+
+            Dictionary<CellKey, List<OcrMatch>> wordsByCell = new Dictionary<CellKey, List<OcrMatch>>();
+            foreach (OcrMatch word in snapshot.Words)
+            {
+                if (word == null || string.IsNullOrWhiteSpace(word.Text)) continue;
+                Point center = word.RectCenter();
+                CellKey cell;
+                if (!grid.MapPoint(center.X, center.Y, out cell)) continue;
+
+                List<OcrMatch> list;
+                if (!wordsByCell.TryGetValue(cell, out list))
+                {
+                    list = new List<OcrMatch>();
+                    wordsByCell[cell] = list;
+                }
+                list.Add(word);
+            }
+
+            foreach (KeyValuePair<CellKey, List<OcrMatch>> pair in wordsByCell)
+            {
+                List<OcrMatch> ordered = pair.Value
+                    .OrderBy(m => m.Rect.Top)
+                    .ThenBy(m => m.Rect.Left)
+                    .ToList();
+
+                OcrMatch impreza = null;
+                OcrMatch twentyTwoB = null;
+                foreach (OcrMatch word in ordered)
+                {
+                    string normalized = NormalizeLatinLoose(word.Text);
+                    if (impreza == null && LooksLikeImpreza(normalized))
+                    {
+                        impreza = word;
+                        continue;
+                    }
+
+                    if (twentyTwoB == null && LooksLike22B(normalized))
+                    {
+                        twentyTwoB = word;
+                    }
+                }
+
+                if (impreza == null || twentyTwoB == null) continue;
+                result.Add(MergeOcrMatches(new[] { impreza, twentyTwoB }));
+            }
+
+            return OcrMatchFilter.DeduplicateByRect(result)
+                .OrderBy(match => OcrMatchFilter.LeftTopRank(match))
+                .ToList();
         }
 
         private List<OcrMatch> FindTargetVehicleCompactWordMatches(OcrSnapshot snapshot)
@@ -60,10 +119,11 @@ namespace FH6SkillPointOcr
 
         private List<OcrMatch> FindNewBadgeMatches(OcrSnapshot snapshot)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, config.NewBadgeText);
+            OcrSnapshot chinese = OcrLanguageFilter.Chinese(snapshot);
+            List<OcrMatch> matches = ocr.Find(chinese, config.NewBadgeText);
             if (matches.Count > 0) return OcrMatchFilter.FilterUiTextMatches(matches, config.NewBadgeText);
             return OcrMatchFilter.FilterUiTextMatches(
-                ocr.FindCjkFuzzy(snapshot, config.NewBadgeText, FH6AutomationConstants.Ocr.NewBadgeCjkMinCommonChars, FH6AutomationConstants.Ocr.NewBadgeCjkMaxNormalizedLength),
+                ocr.FindCjkFuzzy(chinese, config.NewBadgeText, FH6AutomationConstants.Ocr.NewBadgeCjkMinCommonChars, FH6AutomationConstants.Ocr.NewBadgeCjkMaxNormalizedLength),
                 config.NewBadgeText);
         }
 
@@ -74,10 +134,11 @@ namespace FH6SkillPointOcr
 
         private List<OcrMatch> FindMyHorizonMatches(OcrSnapshot snapshot)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, config.MyHorizonText);
+            OcrSnapshot chinese = OcrLanguageFilter.Chinese(snapshot);
+            List<OcrMatch> matches = ocr.Find(chinese, config.MyHorizonText);
             if (matches.Count > 0) return OcrMatchFilter.FilterUiTextMatches(matches, config.MyHorizonText);
             return OcrMatchFilter.FilterUiTextMatches(
-                ocr.FindCjkFuzzy(snapshot, config.MyHorizonText, FH6AutomationConstants.Ocr.MyHorizonCjkMinCommonChars, FH6AutomationConstants.Ocr.MyHorizonCjkMaxNormalizedLength),
+                ocr.FindCjkFuzzy(chinese, config.MyHorizonText, FH6AutomationConstants.Ocr.MyHorizonCjkMinCommonChars, FH6AutomationConstants.Ocr.MyHorizonCjkMaxNormalizedLength),
                 config.MyHorizonText);
         }
 
@@ -93,14 +154,15 @@ namespace FH6SkillPointOcr
 
         private List<OcrMatch> FindConfiguredCjkTextMatches(OcrSnapshot snapshot, string text)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, text);
+            OcrSnapshot chinese = OcrLanguageFilter.Chinese(snapshot);
+            List<OcrMatch> matches = ocr.Find(chinese, text);
             matches.AddRange(FindCjkLooseMatches(
-                snapshot,
+                chinese,
                 text,
                 Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
                 Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
             matches.AddRange(ocr.FindCjkFuzzy(
-                snapshot,
+                chinese,
                 text,
                 Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
                 Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
@@ -137,7 +199,9 @@ namespace FH6SkillPointOcr
             {
                 string haystack = NormalizeCjkLoose(match.Text);
                 if (haystack.Length == 0 || haystack.Length > maxNormalizedLength) continue;
-                if (haystack.Contains(needle) || needle.Contains(haystack) || CommonCharCountLoose(needle, haystack) >= minCommonChars)
+                if (haystack.Contains(needle) ||
+                    (needle.Contains(haystack) && haystack.Length >= minCommonChars) ||
+                    CommonCharCountLoose(needle, haystack) >= minCommonChars)
                 {
                     result.Add(match);
                 }
@@ -179,6 +243,15 @@ namespace FH6SkillPointOcr
             if (string.IsNullOrEmpty(normalized)) return false;
             if (normalized.StartsWith("22B", StringComparison.OrdinalIgnoreCase)) return true;
             return LevenshteinDistance(normalized, "22BSTI") <= 1;
+        }
+
+        private static bool LooksLikeImpreza(string normalized)
+        {
+            if (string.IsNullOrEmpty(normalized)) return false;
+            return normalized == "IMPREZA" ||
+                normalized == "MPREZA" ||
+                normalized == "PREZA" ||
+                normalized.EndsWith("IMPREZA", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string NormalizeLatinLoose(string text)

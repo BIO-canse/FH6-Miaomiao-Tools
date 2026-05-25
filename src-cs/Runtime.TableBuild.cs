@@ -26,10 +26,10 @@ namespace FH6SkillPointOcr
             int scrollStep = Math.Max(1, grid.VisibleColumns - 1);
             for (int i = 0; i < config.MaxFindNewScrolls; i++)
             {
-                int ignoredLeadingColumns = i == 0 ? 1 : 0;
-                DebugGate("table build OCR", "定表 OCR，第 " + (i + 1) + " 次，忽略可见前置列数=" + ignoredLeadingColumns);
+                int baseIgnoredLeadingColumns = TableBuildBaseIgnoredLeadingColumns(i);
+                DebugGate("table build OCR", "定表 OCR，第 " + (i + 1) + " 次，基础忽略可见前置列数=" + baseIgnoredLeadingColumns);
                 last = ReadVehicleGridScreen();
-                RecordTableBuildObservation(last, i, ignoredLeadingColumns);
+                RecordTableBuildObservation(last, i, baseIgnoredLeadingColumns);
 
                 CellKey lastTarget;
                 CellKey nextCell;
@@ -55,8 +55,14 @@ namespace FH6SkillPointOcr
             Fail(last, "table-build-boundary-not-found");
         }
 
-        private void RecordTableBuildObservation(OcrSnapshot snapshot, int scrollIndex, int ignoredLeadingColumns)
+        private int TableBuildBaseIgnoredLeadingColumns(int scrollIndex)
         {
+            return scrollIndex == 0 ? 1 : 0;
+        }
+
+        private void RecordTableBuildObservation(OcrSnapshot snapshot, int scrollIndex, int baseIgnoredLeadingColumns)
+        {
+            int ignoredLeadingColumns = EffectiveTableBuildIgnoredLeadingColumns(snapshot, baseIgnoredLeadingColumns);
             VehicleGridObservation observation = BuildVehicleGridObservation(snapshot, scrollIndex);
             WriteTableBuildObservationTrace(observation, ignoredLeadingColumns);
             vehicleList.ApplyTableBuildObservation(
@@ -86,6 +92,14 @@ namespace FH6SkillPointOcr
                 observation.DeletableCells,
                 observation.DriveCells,
                 null);
+        }
+
+        private int EffectiveTableBuildIgnoredLeadingColumns(OcrSnapshot snapshot, int baseIgnoredLeadingColumns)
+        {
+            int skippedByOcrAdapter = snapshot == null ? 0 : snapshot.SkippedLeadingGridColumns;
+            int effective = Math.Max(Math.Max(0, baseIgnoredLeadingColumns), Math.Max(0, skippedByOcrAdapter));
+            if (grid.VisibleColumns > 0) effective = Math.Min(effective, grid.VisibleColumns);
+            return effective;
         }
 
         private void AppendPurchasedVehiclesToVirtualTable(int count)

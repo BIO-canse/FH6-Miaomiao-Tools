@@ -34,6 +34,7 @@ namespace FH6AutomationShared
             public const int OneSecondMs = 1000;
             public const int FiveSecondsMs = 5000;
             public const int TenSecondsMs = 10000;
+            public const int TwelveSecondsMs = 12000;
             public const int ThirteenSecondsMs = 13000;
             public const int FifteenSecondsMs = 15000;
             public const int TwentySecondsMs = 20000;

@@ -44,6 +44,12 @@ namespace FH6SkillPointOcr
         private readonly StringBuilder paddleOcrErrors = new StringBuilder();
         private readonly StringBuilder mediaOcrErrors = new StringBuilder();
         private readonly StringBuilder rapidOcrErrors = new StringBuilder();
+        private static readonly object MediaOcrValidationLock = new object();
+
+        public bool IsMediaOcr
+        {
+            get { return useMediaOcr; }
+        }
 
         public OcrReader(Config config, string debugImageDir)
             : this(config, debugImageDir, null, null)
@@ -131,6 +137,14 @@ namespace FH6SkillPointOcr
         }
 
         private void ValidateMediaOcrRuntime()
+        {
+            lock (MediaOcrValidationLock)
+            {
+                ValidateMediaOcrRuntimeLocked();
+            }
+        }
+
+        private void ValidateMediaOcrRuntimeLocked()
         {
             string reportPath = Path.Combine(diagnosticsDir, "mediaocr-dependency-check-last.txt");
             string stampPath = Path.Combine(diagnosticsDir, "mediaocr-dependency-check-ok.txt");
@@ -592,7 +606,7 @@ namespace FH6SkillPointOcr
             {
                 string haystack = NormalizeCjk(candidate.Text);
                 if (haystack.Length == 0 || haystack.Length > maxNormalizedLength) continue;
-                if (haystack.Contains(needle) || needle.Contains(haystack))
+                if (haystack.Contains(needle) || (needle.Contains(haystack) && haystack.Length >= minCommonChars))
                 {
                     matches.Add(candidate);
                     continue;
@@ -753,28 +767,29 @@ namespace FH6SkillPointOcr
         private List<OcrMatch> FindPhrase(List<List<OcrMatch>> wordLines, string query)
         {
             bool cjk = HasCjk(query);
-            string needle = cjk ? NormalizeCjk(query) : NormalizeLatin(query);
+            bool cjkOnlyPhrase = cjk && NormalizeCjkOnly(query).Length > 0 && NormalizeCjkOnly(query) == NormalizeCjk(query);
+            string needle = cjkOnlyPhrase ? NormalizeCjkOnly(query) : (cjk ? NormalizeCjk(query) : NormalizeLatin(query));
             List<OcrMatch> matches = new List<OcrMatch>();
             foreach (List<OcrMatch> line in wordLines)
             {
                 List<Tuple<string, OcrMatch>> normalized = new List<Tuple<string, OcrMatch>>();
                 foreach (OcrMatch word in line)
                 {
-                    string text = cjk ? NormalizeCjk(word.Text) : NormalizeLatin(word.Text);
+                    string text = cjkOnlyPhrase ? NormalizeCjkOnly(word.Text) : (cjk ? NormalizeCjk(word.Text) : NormalizeLatin(word.Text));
                     if (text.Length > 0) normalized.Add(Tuple.Create(text, word));
                 }
 
                 for (int start = 0; start < normalized.Count; start++)
                 {
                     string combined = "";
-                    List<OcrMatch> selected = new List<OcrMatch>();
+                    List<Tuple<string, OcrMatch>> selected = new List<Tuple<string, OcrMatch>>();
                     for (int index = start; index < normalized.Count; index++)
                     {
                         combined += normalized[index].Item1;
-                        selected.Add(normalized[index].Item2);
+                        selected.Add(normalized[index]);
                         if (combined.Contains(needle))
                         {
-                            matches.Add(MergeWords(selected));
+                            matches.Add(MergeWords(TrimPhraseSelection(selected, needle)));
                             break;
                         }
                         if (combined.Length > needle.Length + 12 && !combined.Contains(needle)) break;
@@ -782,6 +797,32 @@ namespace FH6SkillPointOcr
                 }
             }
             return PreferExactOrCompact(matches, needle, cjk);
+        }
+
+        private static List<OcrMatch> TrimPhraseSelection(List<Tuple<string, OcrMatch>> selected, string needle)
+        {
+            int left = 0;
+            int right = selected.Count - 1;
+            while (left < right && SpanTextContains(selected, left + 1, right, needle)) left++;
+            while (right > left && SpanTextContains(selected, left, right - 1, needle)) right--;
+
+            List<OcrMatch> result = new List<OcrMatch>();
+            for (int i = left; i <= right; i++)
+            {
+                result.Add(selected[i].Item2);
+            }
+            return result;
+        }
+
+        private static bool SpanTextContains(List<Tuple<string, OcrMatch>> selected, int left, int right, string needle)
+        {
+            if (left > right) return false;
+            StringBuilder sb = new StringBuilder();
+            for (int i = left; i <= right; i++)
+            {
+                sb.Append(selected[i].Item1);
+            }
+            return sb.ToString().Contains(needle);
         }
 
         private static List<OcrMatch> PreferExactOrCompact(List<OcrMatch> matches, string normalizedNeedle, bool cjk)
@@ -834,7 +875,17 @@ namespace FH6SkillPointOcr
             float right = words.Max(w => w.Rect.Right);
             float bottom = words.Max(w => w.Rect.Bottom);
             double conf = words.Where(w => w.Confidence >= 0).Select(w => w.Confidence).DefaultIfEmpty(-1).Average();
-            return new OcrMatch(string.Join(" ", words.Select(w => w.Text).ToArray()), new RectangleF(left, top, right - left, bottom - top), conf);
+            return new OcrMatch(string.Join(" ", words.Select(w => w.Text).ToArray()), new RectangleF(left, top, right - left, bottom - top), conf, MergeLanguage(words));
+        }
+
+        private static string MergeLanguage(List<OcrMatch> words)
+        {
+            List<string> languages = words
+                .Select(w => w.Language ?? "")
+                .Where(v => v.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return languages.Count == 1 ? languages[0] : "";
         }
 
         private static double ParseDouble(string raw, double fallback)
@@ -855,6 +906,15 @@ namespace FH6SkillPointOcr
             normalized = normalized.Replace("臺", "台");
             normalized = normalized.Replace("賓", "宾");
             return Regex.Replace(normalized, @"[^\u4e00-\u9fffA-Za-z0-9]", "");
+        }
+
+        private static string NormalizeCjkOnly(string text)
+        {
+            string normalized = Regex.Replace(text ?? "", @"\s+", "");
+            normalized = normalized.Replace("魯", "鲁");
+            normalized = normalized.Replace("臺", "台");
+            normalized = normalized.Replace("賓", "宾");
+            return Regex.Replace(normalized, @"[^\u4e00-\u9fff]", "");
         }
 
         private void EnsureMediaOcrProcess()
@@ -1150,7 +1210,8 @@ namespace FH6SkillPointOcr
                         string text = Convert.ToString(item["text"], CultureInfo.InvariantCulture);
                         double confidence = item.ContainsKey("confidence") ? Convert.ToDouble(item["confidence"], CultureInfo.InvariantCulture) : -1;
                         RectangleF rect = ParseOcrRect(item["rect"], screenshot, imageScale);
-                        matches.Add(new OcrMatch(text, rect, confidence));
+                        string language = item.ContainsKey("language") ? Convert.ToString(item["language"], CultureInfo.InvariantCulture) : "";
+                        matches.Add(new OcrMatch(text, rect, confidence, language));
                     }
                 }
             }

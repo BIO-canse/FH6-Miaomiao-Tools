@@ -79,16 +79,17 @@ namespace FH6SkillPointOcr
 
         private static List<OcrMatch> FindUiTextMatches(OcrReader ocr, OcrSnapshot snapshot, string text)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, text);
+            OcrSnapshot searchSnapshot = HasCjk(text) ? OcrLanguageFilter.Chinese(snapshot) : snapshot;
+            List<OcrMatch> matches = ocr.Find(searchSnapshot, text);
             if (HasCjk(text))
             {
                 matches.AddRange(FindCjkLooseMatches(
-                    snapshot,
+                    searchSnapshot,
                     text,
                     Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
                     Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
                 matches.AddRange(ocr.FindCjkFuzzy(
-                    snapshot,
+                    searchSnapshot,
                     text,
                     Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
                     Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));
@@ -106,7 +107,9 @@ namespace FH6SkillPointOcr
             {
                 string haystack = NormalizeCjkLoose(match.Text);
                 if (haystack.Length == 0 || haystack.Length > maxNormalizedLength) continue;
-                if (haystack.Contains(needle) || needle.Contains(haystack) || CommonCharCountLoose(needle, haystack) >= minCommonChars)
+                if (haystack.Contains(needle) ||
+                    (needle.Contains(haystack) && haystack.Length >= minCommonChars) ||
+                    CommonCharCountLoose(needle, haystack) >= minCommonChars)
                 {
                     result.Add(match);
                 }

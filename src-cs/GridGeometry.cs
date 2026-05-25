@@ -142,6 +142,11 @@ namespace FH6SkillPointOcr
             return true;
         }
 
+        public bool TryGetCellRect(CellKey cell, out RectangleF rect)
+        {
+            return cells.TryGetValue(cell, out rect);
+        }
+
         public List<CellKey> AllCellKeys()
         {
             return cells.Keys.OrderBy(c => c.Col).ThenBy(c => c.Row).ToList();

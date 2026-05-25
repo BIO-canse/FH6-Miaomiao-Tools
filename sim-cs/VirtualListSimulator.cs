@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -139,12 +140,224 @@ namespace FH6SkillPointOcr
                     "[SCENARIO] 选择偏移：优先回到 OCR 实际观测 offset，不用未验证右对齐外推: {0}",
                     observedOffsetFindings.Count == 0 ? "PASS" : "FAIL findings=" + observedOffsetFindings.Count));
 
+                List<SimulationFinding> ocrSafetyFindings = RunOcrSafetyChecks();
+                findings.AddRange(ocrSafetyFindings);
+                summaries.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "[SCENARIO] OCR 写表优先级：全新 600 目标车写 3，旧 600 目标车写 4: {0}",
+                    ocrSafetyFindings.Count == 0 ? "PASS" : "FAIL findings=" + ocrSafetyFindings.Count));
+
+                List<SimulationFinding> tableBuildLeadingColumnFindings = RunTableBuildLeadingColumnChecks();
+                findings.AddRange(tableBuildLeadingColumnFindings);
+                summaries.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "[SCENARIO] MediaOCR 建表保留列：忽略第 0 列时不能把未识别列写成空格: {0}",
+                    tableBuildLeadingColumnFindings.Count == 0 ? "PASS" : "FAIL findings=" + tableBuildLeadingColumnFindings.Count));
+
+                List<SimulationFinding> uiTextFilterFindings = RunUiTextFilterChecks();
+                findings.AddRange(uiTextFilterFindings);
+                summaries.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "[SCENARIO] 中文 UI 点击候选：多了取最短，短了不点: {0}",
+                    uiTextFilterFindings.Count == 0 ? "PASS" : "FAIL findings=" + uiTextFilterFindings.Count));
+
                 List<SimulationFinding> randomizedFindings = RunRandomizedPropertyChecks();
                 findings.AddRange(randomizedFindings);
                 summaries.Add(string.Format(
                     CultureInfo.InvariantCulture,
                     "[SCENARIO] 随机属性推演：定表正确后，点技能/删车/买车/找 900 分开车候选跨轮保持虚拟表一致: {0}",
                     randomizedFindings.Count == 0 ? "PASS" : "FAIL findings=" + randomizedFindings.Count));
+
+                return findings;
+            }
+
+            private List<SimulationFinding> RunUiTextFilterChecks()
+            {
+                List<SimulationFinding> findings = new List<SimulationFinding>();
+
+                List<OcrMatch> shortOnly = new List<OcrMatch>();
+                shortOnly.Add(new OcrMatch("中", new RectangleF(929, 742, 29, 33), 1));
+                List<OcrMatch> shortFiltered = OcrMatchFilter.FilterUiTextMatches(shortOnly, "创意中心");
+                if (shortFiltered.Count != 0)
+                {
+                    findings.Add(new SimulationFinding
+                    {
+                        Severity = "critical",
+                        Title = "中文 UI 短候选被允许点击",
+                        Detail = "query=创意中心 only matched text=中, expected no clickable candidate."
+                    });
+                }
+
+                List<OcrMatch> candidates = new List<OcrMatch>();
+                candidates.Add(new OcrMatch("在线 创 意 中 心 商 店", new RectangleF(1335, 359, 430, 51), 1));
+                candidates.Add(new OcrMatch("创 意 中 心", new RectangleF(1479, 367, 138, 34), 1));
+                candidates.Add(new OcrMatch("中", new RectangleF(929, 742, 29, 33), 1));
+                OcrMatch chosen = OcrMatchFilter.ChooseUiTextMatch(candidates, "创意中心");
+                if (chosen == null || chosen.Text != "创 意 中 心")
+                {
+                    findings.Add(new SimulationFinding
+                    {
+                        Severity = "critical",
+                        Title = "中文 UI 完整最短候选没有优先",
+                        Detail = "expected compact exact phrase 创 意 中 心, got " + (chosen == null ? "null" : chosen.Text)
+                    });
+                }
+
+                List<OcrMatch> mixedLine = new List<OcrMatch>();
+                mixedLine.Add(new OcrMatch("€1Jü*/b", new RectangleF(1479, 367, 138, 34), 1, "en-US"));
+                mixedLine.Add(new OcrMatch("创", new RectangleF(1479, 368, 31, 33), 1, "zh-Hans-CN"));
+                mixedLine.Add(new OcrMatch("意", new RectangleF(1514, 367, 33, 33), 1, "zh-Hans-CN"));
+                mixedLine.Add(new OcrMatch("中", new RectangleF(1551, 368, 29, 33), 1, "zh-Hans-CN"));
+                mixedLine.Add(new OcrMatch("心", new RectangleF(1584, 368, 33, 32), 1, "zh-Hans-CN"));
+                OcrSnapshot mixedSnapshot = new OcrSnapshot(
+                    null,
+                    mixedLine,
+                    new List<List<OcrMatch>> { mixedLine.OrderBy(m => m.Rect.Left).ToList() },
+                    new List<OcrMatch>());
+                OcrSnapshot chinese = OcrLanguageFilter.Chinese(mixedSnapshot);
+                if (chinese.Words.Any(w => w.Language.StartsWith("en", StringComparison.OrdinalIgnoreCase)))
+                {
+                    findings.Add(new SimulationFinding
+                    {
+                        Severity = "critical",
+                        Title = "中文 UI 候选混入英文 OCR 结果",
+                        Detail = "pure Chinese UI matching must exclude MediaOCR English noise in the same screen area."
+                    });
+                }
+
+                return findings;
+            }
+
+            private List<SimulationFinding> RunTableBuildLeadingColumnChecks()
+            {
+                List<SimulationFinding> findings = new List<SimulationFinding>();
+                string tempDir = Path.Combine(Path.GetTempPath(), "fh6-virtual-list-sim");
+                Directory.CreateDirectory(tempDir);
+
+                string snapshot = Path.Combine(tempDir, "table-build-leading-column-safety.json");
+                if (File.Exists(snapshot)) File.Delete(snapshot);
+                VirtualVehicleList list = new VirtualVehicleList(rows, null, snapshot, VirtualListLoadMode.None);
+
+                HashSet<CellKey> targets = new HashSet<CellKey>();
+                targets.Add(new CellKey(0, 1));
+                HashSet<CellKey> validNew = new HashSet<CellKey>();
+                validNew.Add(new CellKey(0, 1));
+                HashSet<CellKey> manufacturer = new HashSet<CellKey>();
+                manufacturer.Add(new CellKey(0, 1));
+                Dictionary<CellKey, int> scores = new Dictionary<CellKey, int>();
+                scores[new CellKey(0, 1)] = 600;
+                HashSet<CellKey> blanks = new HashSet<CellKey>();
+                blanks.Add(new CellKey(0, 0));
+                blanks.Add(new CellKey(1, 0));
+                blanks.Add(new CellKey(2, 0));
+
+                list.ApplyTableBuildObservation(
+                    visibleColumns,
+                    1,
+                    targets,
+                    validNew,
+                    new HashSet<CellKey>(),
+                    new HashSet<CellKey>(),
+                    new HashSet<CellKey>(),
+                    manufacturer,
+                    scores,
+                    new Dictionary<CellKey, string>(),
+                    blanks);
+
+                Dictionary<CellKey, int> states = list.DebugStateCodes();
+                foreach (CellKey key in new[] { new CellKey(0, 0), new CellKey(1, 0), new CellKey(2, 0) })
+                {
+                    if (states.ContainsKey(key))
+                    {
+                        findings.Add(new SimulationFinding
+                        {
+                            Severity = "critical",
+                            Title = "建表保留列被写入",
+                            Detail = "ignored leading column local col0 must not write global col0, but found row=" + key.Row.ToString(CultureInfo.InvariantCulture)
+                        });
+                    }
+                }
+
+                int state;
+                if (!states.TryGetValue(new CellKey(0, 1), out state) || state != FH6AutomationConstants.VehicleState.ValidNew)
+                {
+                    findings.Add(new SimulationFinding
+                    {
+                        Severity = "critical",
+                        Title = "建表忽略第 0 列后没有正常写入第 1 列",
+                        Detail = "local col1 target+600+validNew should still become state 3."
+                    });
+                }
+
+                return findings;
+            }
+
+            private List<SimulationFinding> RunOcrSafetyChecks()
+            {
+                List<SimulationFinding> findings = new List<SimulationFinding>();
+                string tempDir = Path.Combine(Path.GetTempPath(), "fh6-virtual-list-sim");
+                Directory.CreateDirectory(tempDir);
+
+                string snapshot = Path.Combine(tempDir, "ocr-state-priority-safety.json");
+                if (File.Exists(snapshot)) File.Delete(snapshot);
+                VirtualVehicleList list = new VirtualVehicleList(rows, null, snapshot, VirtualListLoadMode.None);
+
+                HashSet<CellKey> target = new HashSet<CellKey>();
+                target.Add(new CellKey(0, 1));
+                target.Add(new CellKey(1, 1));
+                HashSet<CellKey> validNew = new HashSet<CellKey>();
+                validNew.Add(new CellKey(0, 1));
+                HashSet<CellKey> manufacturer = new HashSet<CellKey>();
+                manufacturer.Add(new CellKey(0, 1));
+                manufacturer.Add(new CellKey(1, 1));
+                Dictionary<CellKey, int> scores = new Dictionary<CellKey, int>();
+                scores[new CellKey(0, 1)] = 600;
+                scores[new CellKey(1, 1)] = 600;
+
+                list.ApplyFullObservation(
+                    visibleColumns,
+                    target,
+                    validNew,
+                    new HashSet<CellKey>(),
+                    new HashSet<CellKey> { new CellKey(0, 1), new CellKey(1, 1) },
+                    new HashSet<CellKey>(),
+                    manufacturer,
+                    scores,
+                    new Dictionary<CellKey, string>(),
+                    new HashSet<CellKey>());
+
+                Dictionary<CellKey, int> states = list.DebugStateCodes();
+                int state;
+                if (!states.TryGetValue(new CellKey(0, 1), out state) || state != FH6AutomationConstants.VehicleState.ValidNew)
+                {
+                    findings.Add(new SimulationFinding
+                    {
+                        Severity = "critical",
+                        Title = "OCR 写表错误：全新 600 目标车没有优先写成状态 3",
+                        Detail = "target+score600+validNew must stay state 3 even when deletable evidence also exists."
+                    });
+                }
+
+                if (!states.TryGetValue(new CellKey(1, 1), out state) || state != FH6AutomationConstants.VehicleState.Deletable)
+                {
+                    findings.Add(new SimulationFinding
+                    {
+                        Severity = "critical",
+                        Title = "OCR 写表错误：旧 600 目标车没有写成状态 4",
+                        Detail = "target+score600 without validNew must be state 4 because garage may already contain old cars."
+                    });
+                }
+
+                CellKey deleteTarget;
+                if (!list.TryGetDeleteVehicleGlobalTarget(out deleteTarget) || deleteTarget.Row != 1 || deleteTarget.Col != 1)
+                {
+                    findings.Add(new SimulationFinding
+                    {
+                        Severity = "critical",
+                        Title = "删车目标错误：状态 3 不能进入删车目标，状态 4 必须能进入",
+                        Detail = "expected delete target col1,row1 only."
+                    });
+                }
 
                 return findings;
             }

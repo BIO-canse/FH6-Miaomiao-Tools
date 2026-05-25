@@ -25,6 +25,7 @@ namespace FH6SkillPointOcr
         private readonly string snapshotPath;
         private readonly Dictionary<CellKey, VirtualVehicleCell> cells = new Dictionary<CellKey, VirtualVehicleCell>();
         private bool hasResumeOffset;
+        private const int SnapshotSemanticRevision = 2;
 
         public int CurrentOffset { get; private set; }
         public int ResumeOffset { get; private set; }
@@ -1316,6 +1317,16 @@ namespace FH6SkillPointOcr
             try
             {
                 Dictionary<string, object> root = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(snapshotPath, Encoding.UTF8));
+                object revisionValue;
+                int revision = root.TryGetValue("semantic_revision", out revisionValue)
+                    ? Convert.ToInt32(revisionValue, CultureInfo.InvariantCulture)
+                    : 0;
+                if (revision < SnapshotSemanticRevision)
+                {
+                    Log(string.Format(CultureInfo.InvariantCulture, "LOAD_EXISTING skipped semantic_revision {0} < {1}", revision, SnapshotSemanticRevision));
+                    return false;
+                }
+
                 object rowsValue;
                 if (root.TryGetValue("rows", out rowsValue) && Convert.ToInt32(rowsValue, CultureInfo.InvariantCulture) != rows)
                 {
@@ -1460,6 +1471,7 @@ namespace FH6SkillPointOcr
             {
                 Dictionary<string, object> root = new Dictionary<string, object>();
                 root["schema"] = "fh6_virtual_vehicle_list.v1";
+                root["semantic_revision"] = SnapshotSemanticRevision;
                 root["note"] = "虚拟列表运行期快照。独立启动只复用格子几何并重新 OCR；衔接启动和总控阶段交接会读取本文件的车辆状态。";
                 root["updated_at"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
                 root["update_reason"] = reason;

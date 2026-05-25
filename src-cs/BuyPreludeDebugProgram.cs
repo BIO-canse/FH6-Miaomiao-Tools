@@ -208,11 +208,12 @@ namespace FH6SkillPointOcr
 
         private static List<OcrMatch> FindConfiguredCjkTextMatches(Config config, OcrReader ocr, OcrSnapshot snapshot, string text)
         {
-            List<OcrMatch> matches = ocr.Find(snapshot, text);
+            OcrSnapshot chinese = OcrLanguageFilter.Chinese(snapshot);
+            List<OcrMatch> matches = ocr.Find(chinese, text);
             if (matches.Count == 0)
             {
                 matches.AddRange(ocr.FindCjkFuzzy(
-                    snapshot,
+                    chinese,
                     text,
                     Math.Min(FH6AutomationConstants.Ocr.UiCjkMaxCommonChars, Math.Max(1, text.Length - 1)),
                     Math.Max(FH6AutomationConstants.Ocr.UiCjkMaxExtraLength, text.Length + FH6AutomationConstants.Ocr.UiCjkMaxExtraLength)));

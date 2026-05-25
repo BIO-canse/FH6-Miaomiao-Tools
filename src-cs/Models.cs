@@ -40,12 +40,14 @@ namespace FH6SkillPointOcr
         public string RawResponse = "";
         public string ErrorOutput = "";
         public string EngineDiagnostics = "";
+        public int SkippedLeadingGridColumns;
         public OcrSnapshot(Screenshot screenshot, List<OcrMatch> words, List<List<OcrMatch>> wordLines, List<OcrMatch> lines)
         {
             Screenshot = screenshot;
             Words = words;
             WordLines = wordLines;
             Lines = lines;
+            SkippedLeadingGridColumns = 0;
         }
     }
 
@@ -54,11 +56,17 @@ namespace FH6SkillPointOcr
         public string Text;
         public RectangleF Rect;
         public double Confidence;
+        public string Language;
         public OcrMatch(string text, RectangleF rect, double confidence)
+            : this(text, rect, confidence, "")
+        {
+        }
+        public OcrMatch(string text, RectangleF rect, double confidence, string language)
         {
             Text = text;
             Rect = rect;
             Confidence = confidence;
+            Language = language ?? "";
         }
         public Point RectCenter()
         {

@@ -80,12 +80,13 @@ namespace FH6SkillPointOcr
                     {
                         sb.AppendLine(string.Format(
                             CultureInfo.InvariantCulture,
-                            "[{0:0},{1:0},{2:0},{3:0}] conf={4:0.000} text={5}",
+                            "[{0:0},{1:0},{2:0},{3:0}] conf={4:0.000} lang={5} text={6}",
                             word.Rect.Left,
                             word.Rect.Top,
                             word.Rect.Width,
                             word.Rect.Height,
                             word.Confidence,
+                            string.IsNullOrWhiteSpace(word.Language) ? "-" : word.Language,
                             word.Text));
                     }
                 }
@@ -223,6 +224,7 @@ namespace FH6SkillPointOcr
                         sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "capture_origin=[{0},{1}]", snapshot.Screenshot.Left, snapshot.Screenshot.Top));
                         sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "capture_size=[{0},{1}]", snapshot.Screenshot.Image.Width, snapshot.Screenshot.Image.Height));
                     }
+                    sb.AppendLine("skipped_leading_grid_columns=" + snapshot.SkippedLeadingGridColumns.ToString(CultureInfo.InvariantCulture));
                     sb.AppendLine("word_count=" + (snapshot.Words == null ? 0 : snapshot.Words.Count).ToString(CultureInfo.InvariantCulture));
                     sb.AppendLine("line_count=" + (snapshot.Lines == null ? 0 : snapshot.Lines.Count).ToString(CultureInfo.InvariantCulture));
                     AppendSection(sb, "engine_diagnostics", snapshot.EngineDiagnostics, 6000);
