@@ -90,23 +90,6 @@ namespace FH6SkillPointOcr
             SetOcrSummary("UI缓存保险OCR: " + run.Label + " 截图标记未及时返回，继续主流程并后台等待结果");
         }
 
-        private void WaitForUiCacheGuardCompletion(UiCacheGuardRun run)
-        {
-            if (run == null) return;
-            SetOcrSummary("UI缓存保险OCR等待结果: " + run.Label);
-            while (uiCacheGuards.Contains(run))
-            {
-                if (run.Process == null || run.Process.HasExited)
-                {
-                    PollUiCacheOcrGuards();
-                    continue;
-                }
-
-                ThrowIfFullAutoSafeStopWithoutChild();
-                Thread.Sleep(FH6AutomationConstants.Timing.ChildProcessPollMs);
-            }
-        }
-
         private void PollUiCacheOcrGuards()
         {
             for (int i = uiCacheGuards.Count - 1; i >= 0; i--)

@@ -31,7 +31,7 @@ namespace FH6SkillPointOcr
                 CliOptions options = CliOptions.Parse(args);
                 if (options.ShowHelp)
                 {
-                    Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--handoff] [--skill-points n] [--credits n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
+                    Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--quick-verify|--normal-full-auto] [--handoff] [--skill-points n] [--credits n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
                     return 0;
                 }
 
@@ -53,6 +53,7 @@ namespace FH6SkillPointOcr
                 AutomationTask task = options.Task.HasValue ? options.Task.Value : GuessTaskFromExecutableName();
                 int skillPoints = task == AutomationTask.FullAuto ? AskSkillPointTotal(options) : (task == AutomationTask.SkillPoints ? AskSkillPointTotal(options) : int.MaxValue);
                 long credits = task == AutomationTask.FullAuto ? AskCreditTotal(options) : long.MaxValue;
+                bool quickVerify = AskFullAutoQuickVerify(options, task);
                 bool stepDebug = mode == RunMode.Debug;
                 bool useFullManufacturerFlow = task == AutomationTask.SkillPoints || (task == AutomationTask.DeleteVehicles && options.ReuseVehicleListState);
                 VirtualListLoadMode listLoadMode = ResolveVirtualListLoadMode(task, options);
@@ -62,7 +63,7 @@ namespace FH6SkillPointOcr
                         ? "[STARTUP] 删除车辆：衔接启动，完整复用旧虚拟列表信息。"
                         : "[STARTUP] 删除车辆：独立启动，直接从当前车辆列表 OCR 建表；只有 --handoff 才衔接。");
                 }
-                Runtime runtime = new Runtime(config, options.DryRun, stepDebug, skillPoints, credits, task, useFullManufacturerFlow, listLoadMode, options.ReuseVehicleListState, options.SafeStopFile, options.SkillPointsStateFile, options.SkillPointsLogFile);
+                Runtime runtime = new Runtime(config, options.DryRun, stepDebug, skillPoints, credits, task, useFullManufacturerFlow, listLoadMode, options.ReuseVehicleListState, quickVerify, options.SafeStopFile, options.SkillPointsStateFile, options.SkillPointsLogFile);
                 runtime.Run();
                 return 0;
             }
@@ -150,6 +151,35 @@ namespace FH6SkillPointOcr
                     return value;
                 }
                 Console.WriteLine("输入无效，请输入 0 或正整数。");
+            }
+        }
+
+        private static bool AskFullAutoQuickVerify(CliOptions options, AutomationTask task)
+        {
+            if (task != AutomationTask.FullAuto) return false;
+            if (options.QuickVerify.HasValue)
+            {
+                Console.WriteLine(options.QuickVerify.Value
+                    ? "[STARTUP] 全自动快速验证模式：刷点只到达/超过 " + FH6AutomationConstants.SkillPoints.QuickVerifyTarget + "，买车按技术点/32。"
+                    : "[STARTUP] 全自动普通模式：刷点到 " + FH6AutomationConstants.SkillPoints.Max + "，买车补到 " + FH6AutomationConstants.Flow.BuyTargetValidNewCount + " 辆。");
+                return options.QuickVerify.Value;
+            }
+
+            while (true)
+            {
+                Console.Write("请选择全自动运行目标：1=普通模式(刷到999，买到31辆，默认)，2=快速验证(刷到100，按技术点/32买车)：");
+                string input = (Console.ReadLine() ?? "").Trim();
+                if (input.Length == 0 || input == "1")
+                {
+                    Console.WriteLine("[STARTUP] 已选择普通模式。");
+                    return false;
+                }
+                if (input == "2")
+                {
+                    Console.WriteLine("[STARTUP] 已选择快速验证模式。");
+                    return true;
+                }
+                Console.WriteLine("输入无效，请输入 1 或 2。");
             }
         }
 

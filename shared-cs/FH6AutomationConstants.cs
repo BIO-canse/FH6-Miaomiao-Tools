@@ -101,6 +101,7 @@ namespace FH6AutomationShared
         internal static class SkillPoints
         {
             public const int Max = 999;
+            public const int QuickVerifyTarget = 100;
             public const int PerVehicle = 32;
             public const int MinuteLoopGain = 10;
             public const int MinuteLoopEnterToXWaitMs = 37000;

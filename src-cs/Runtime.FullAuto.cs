@@ -69,7 +69,7 @@ namespace FH6SkillPointOcr
         private void RunFullAutoStartupPreflight()
         {
             ClearSharedUiClickCache("full auto startup");
-            SetOcrSummary("总控启动前置: 当前 CR " + remainingCredits + "；买车每辆 " + FH6AutomationConstants.Credits.VehiclePrice + "；第一轮先定表，后续直接读写虚拟列表");
+            SetOcrSummary("总控启动前置: " + FullAutoModeSummary() + "；当前 CR " + remainingCredits + "；买车每辆 " + FH6AutomationConstants.Credits.VehiclePrice + "；第一轮先定表，后续直接读写虚拟列表");
         }
 
         private void RunDeleteChildHandoff()
@@ -91,11 +91,12 @@ namespace FH6SkillPointOcr
         private void RunMinuteWLoopUntilSkillPointsFull()
         {
             SetStage("子程序: 刷技术点循环");
-            SetStatus("minute loop", "启动刷技术点循环，每轮 +" + FH6AutomationConstants.SkillPoints.MinuteLoopGain + "，到 " + FH6AutomationConstants.SkillPoints.Max + " 后安全退出");
+            int target = FullAutoSkillPointTarget();
+            SetStatus("minute loop", "启动刷技术点循环，每轮 +" + FH6AutomationConstants.SkillPoints.MinuteLoopGain + "，到达/超过 " + target + " 后安全退出");
             string safeStopFile = SafeStopPath(FH6AutomationConstants.Files.MinuteSafeStop);
             DeleteFileIfExists(safeStopFile);
             PersistFullAutoSkillPoints("before_minute_loop");
-            string arguments = "--handoff --safe-stop-file " + QuoteArg(safeStopFile) + " --skill-points-state-file " + QuoteArg(SkillPointsStatePath()) + " --skill-points-log-file " + QuoteArg(skillPointsLogFile);
+            string arguments = "--handoff --safe-stop-file " + QuoteArg(safeStopFile) + " --skill-points-target " + target.ToString(CultureInfo.InvariantCulture) + " --skill-points-state-file " + QuoteArg(SkillPointsStatePath()) + " --skill-points-log-file " + QuoteArg(skillPointsLogFile);
             RunMinuteWLoopProcess(safeStopFile, arguments, true);
         }
 
@@ -141,6 +142,7 @@ namespace FH6SkillPointOcr
             FullAutoSleep(FH6AutomationConstants.Timing.OneSecondMs);
             FindTextAndClick(config.LatestHotText, "最新最热");
             FindTextAndClick(config.MyFavoritesText, "我的收藏");
+            FullAutoSleep(FH6AutomationConstants.Timing.OneSecondMs);
             input.Tap("ENTER");
             FullAutoSleep(FH6AutomationConstants.Timing.FiveSecondsMs);
             input.Tap("ENTER");
@@ -217,15 +219,50 @@ namespace FH6SkillPointOcr
         private int CalculateVehicleBuyRounds()
         {
             int existingValidNew = vehicleList.CountValidNewVehicles();
-            int target = FH6AutomationConstants.Flow.BuyTargetValidNewCount;
+            int target = FullAutoBuyTargetValidNewCount();
             int rounds = Math.Max(0, target - existingValidNew);
             SetOcrSummary(string.Format(
                 CultureInfo.InvariantCulture,
-                "买车补充: 当前状态3={0}, 目标={1}, 本次买={2}",
+                "买车补充: {0}; 当前状态3={1}, 目标={2}, 本次买={3}",
+                FullAutoModeSummary(),
                 existingValidNew,
                 target,
                 rounds));
             return rounds;
+        }
+
+        private string FullAutoModeSummary()
+        {
+            if (!quickVerifyMode)
+            {
+                return "普通模式: 刷到 " + FH6AutomationConstants.SkillPoints.Max + "，状态3补到 " + FH6AutomationConstants.Flow.BuyTargetValidNewCount;
+            }
+
+            return "快速验证模式: 刷到达/超过 " + FH6AutomationConstants.SkillPoints.QuickVerifyTarget + "，买车目标=预计技术点/32=" + FullAutoBuyTargetValidNewCount();
+        }
+
+        private int FullAutoSkillPointTarget()
+        {
+            return quickVerifyMode ? FH6AutomationConstants.SkillPoints.QuickVerifyTarget : FH6AutomationConstants.SkillPoints.Max;
+        }
+
+        private int ProjectedSkillPointsAfterMinuteLoop()
+        {
+            int target = FullAutoSkillPointTarget();
+            if (remainingSkillPoints >= target) return Math.Min(FH6AutomationConstants.SkillPoints.Max, remainingSkillPoints);
+
+            int missing = target - remainingSkillPoints;
+            int loops = (missing + FH6AutomationConstants.SkillPoints.MinuteLoopGain - 1) / FH6AutomationConstants.SkillPoints.MinuteLoopGain;
+            return Math.Min(
+                FH6AutomationConstants.SkillPoints.Max,
+                remainingSkillPoints + loops * FH6AutomationConstants.SkillPoints.MinuteLoopGain);
+        }
+
+        private int FullAutoBuyTargetValidNewCount()
+        {
+            if (!quickVerifyMode) return FH6AutomationConstants.Flow.BuyTargetValidNewCount;
+            int target = ProjectedSkillPointsAfterMinuteLoop() / FH6AutomationConstants.SkillPoints.PerVehicle;
+            return Math.Max(0, Math.Min(FH6AutomationConstants.Flow.BuyTargetValidNewCount, target));
         }
 
         private BuyScriptResult RunVehicleBuyScriptRounds(int rounds)
@@ -233,7 +270,7 @@ namespace FH6SkillPointOcr
             SetStage("子程序: 自动买车");
             if (rounds <= 0)
             {
-                SetStatus("full auto child", "当前状态 3 已达到 " + FH6AutomationConstants.Flow.BuyTargetValidNewCount + "，跳过自动买车脚本");
+                SetStatus("full auto child", "当前状态 3 已达到本模式目标 " + FullAutoBuyTargetValidNewCount() + "，跳过自动买车脚本");
                 return new BuyScriptResult(0, 0, remainingCredits, "skipped");
             }
 

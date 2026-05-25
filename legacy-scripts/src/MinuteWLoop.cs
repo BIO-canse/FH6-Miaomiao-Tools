@@ -23,6 +23,7 @@ internal static class MinuteWLoop
     private static int SuperWheelspins;
     private static int EventIndex;
     private static int MinuteLoopCount;
+    private static int SkillPointsTarget = FH6AutomationConstants.SkillPoints.Max;
     private static bool TrackSkillPoints;
     private static bool HandoffStart;
 
@@ -47,6 +48,7 @@ internal static class MinuteWLoop
         SafeStopFile = ParseSafeStopFile(args);
         SkillPointsStateFile = ParseArg(args, "--skill-points-state-file");
         SkillPointsLogFile = ParseArg(args, "--skill-points-log-file");
+        SkillPointsTarget = Math.Max(0, Math.Min(FH6AutomationConstants.SkillPoints.Max, ParseIntArg(args, "--skill-points-target", FH6AutomationConstants.SkillPoints.Max)));
         HandoffStart = HasFlag(args, "--handoff");
         TrackSkillPoints = !string.IsNullOrWhiteSpace(SkillPointsStateFile);
         if (TrackSkillPoints)
@@ -63,15 +65,15 @@ internal static class MinuteWLoop
         Console.WriteLine("W 不会在 Enter 前按下，避免菜单选项被 W 移动。");
         if (TrackSkillPoints)
         {
-            Console.WriteLine("内部技术点计数：当前 {0}，每轮 +{1}，到 {2} 后安全停止。", SkillPoints, FH6AutomationConstants.SkillPoints.MinuteLoopGain, FH6AutomationConstants.SkillPoints.Max);
+            Console.WriteLine("内部技术点计数：当前 {0}，每轮 +{1}，到达/超过 {2} 后安全停止。", SkillPoints, FH6AutomationConstants.SkillPoints.MinuteLoopGain, SkillPointsTarget);
         }
         Console.WriteLine(HandoffStart
             ? "按 Space+C 立即退出。外部安全退出会跑完当前刷技术点循环后退出。衔接启动由主程序负责切回目标窗口。"
             : "按 Space+C 立即退出。外部安全退出会跑完当前刷技术点循环后退出。请在第一次 10 秒等待内切到目标窗口。");
 
-        if (TrackSkillPoints && SkillPoints >= FH6AutomationConstants.SkillPoints.Max)
+        if (TrackSkillPoints && SkillPoints >= SkillPointsTarget)
         {
-            Console.WriteLine("技术点已达到 {0}，不启动刷点循环。", FH6AutomationConstants.SkillPoints.Max);
+            Console.WriteLine("技术点已达到 {0}，不启动刷点循环。", SkillPointsTarget);
             WriteSkillPointsState("already_full");
             return;
         }
@@ -221,6 +223,13 @@ internal static class MinuteWLoop
         return false;
     }
 
+    private static int ParseIntArg(string[] args, string name, int fallback)
+    {
+        string text = ParseArg(args, name);
+        int value;
+        return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ? value : fallback;
+    }
+
     private static void AddSkillPointsForCompletedLoop()
     {
         if (!TrackSkillPoints) return;
@@ -230,11 +239,11 @@ internal static class MinuteWLoop
         AppendSkillPointEvent("minute_loop_completed", before, SkillPoints, SkillPoints - before, SuperWheelspins, SuperWheelspins);
         WriteSkillPointsState("minute_loop_completed");
         Console.WriteLine("{0:HH:mm:ss} 技术点计数 {1} -> {2}", DateTime.Now, before, SkillPoints);
-        if (SkillPoints >= FH6AutomationConstants.SkillPoints.Max)
+        if (SkillPoints >= SkillPointsTarget)
         {
             SafeStopRequested = true;
             StopRequested = true;
-            Console.WriteLine("{0:HH:mm:ss} 技术点已到 {1}，安全停止。", DateTime.Now, FH6AutomationConstants.SkillPoints.Max);
+            Console.WriteLine("{0:HH:mm:ss} 技术点已到达/超过 {1}，安全停止。", DateTime.Now, SkillPointsTarget);
         }
     }
 

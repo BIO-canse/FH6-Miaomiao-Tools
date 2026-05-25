@@ -25,6 +25,7 @@ namespace FH6SkillPointOcr
         private readonly bool useFullManufacturerFlow;
         private readonly VirtualListLoadMode virtualListLoadMode;
         private readonly bool handoffStart;
+        private readonly bool quickVerifyMode;
         private readonly bool stepDebug;
         private readonly string skillPointsStateFile;
         private readonly string skillPointsLogFile;
@@ -63,13 +64,14 @@ namespace FH6SkillPointOcr
         private bool subaruListBoundaryReached;
         private string subaruListBoundaryReason = "";
 
-        public Runtime(Config config, bool dryRun, bool stepDebug, int initialSkillPoints, long initialCredits, AutomationTask task, bool useFullManufacturerFlow, VirtualListLoadMode virtualListLoadMode, bool handoffStart, string safeStopFile, string skillPointsStateFile, string skillPointsLogFile)
+        public Runtime(Config config, bool dryRun, bool stepDebug, int initialSkillPoints, long initialCredits, AutomationTask task, bool useFullManufacturerFlow, VirtualListLoadMode virtualListLoadMode, bool handoffStart, bool quickVerifyMode, string safeStopFile, string skillPointsStateFile, string skillPointsLogFile)
         {
             this.config = config;
             this.task = task;
             this.useFullManufacturerFlow = useFullManufacturerFlow;
             this.virtualListLoadMode = virtualListLoadMode;
             this.handoffStart = handoffStart;
+            this.quickVerifyMode = quickVerifyMode;
             this.stepDebug = stepDebug;
             this.skillPointsStateFile = string.IsNullOrWhiteSpace(skillPointsStateFile) ? null : Path.GetFullPath(skillPointsStateFile);
             remainingSkillPoints = initialSkillPoints;

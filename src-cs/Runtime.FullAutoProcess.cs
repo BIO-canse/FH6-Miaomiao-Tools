@@ -75,6 +75,7 @@ namespace FH6SkillPointOcr
         private string MinuteLoopProgressSummary(DateTime estimateAnchorUtc)
         {
             int loops = RemainingMinuteLoopCount();
+            int target = FullAutoSkillPointTarget();
             long remainingMs = 0;
             if (loops > 0)
             {
@@ -88,7 +89,7 @@ namespace FH6SkillPointOcr
                 CultureInfo.InvariantCulture,
                 "当前技术点 {0}/{1}；还需 {2} 轮，约 {3}，预计 {4} 刷满；每轮 +{5}",
                 remainingSkillPoints,
-                FH6AutomationConstants.SkillPoints.Max,
+                target,
                 loops,
                 FormatDurationCompact(TimeSpan.FromMilliseconds(remainingMs)),
                 finishAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
@@ -99,7 +100,7 @@ namespace FH6SkillPointOcr
 
         private int RemainingMinuteLoopCount()
         {
-            int missing = FH6AutomationConstants.SkillPoints.Max - remainingSkillPoints;
+            int missing = FullAutoSkillPointTarget() - remainingSkillPoints;
             if (missing <= 0) return 0;
             return (missing + FH6AutomationConstants.SkillPoints.MinuteLoopGain - 1) / FH6AutomationConstants.SkillPoints.MinuteLoopGain;
         }

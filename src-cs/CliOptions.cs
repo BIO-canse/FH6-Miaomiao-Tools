@@ -31,6 +31,7 @@ namespace FH6SkillPointOcr
         public string SkillPointsLogFile;
         public int? SkillPoints;
         public long? Credits;
+        public bool? QuickVerify;
 
         public static CliOptions Parse(string[] args)
         {
@@ -109,6 +110,14 @@ namespace FH6SkillPointOcr
                     {
                         options.Credits = value;
                     }
+                }
+                else if (arg == "--quick-verify" || arg == "--quick-verify-mode")
+                {
+                    options.QuickVerify = true;
+                }
+                else if (arg == "--normal-full-auto")
+                {
+                    options.QuickVerify = false;
                 }
             }
             return options;
