@@ -22,7 +22,6 @@ namespace FH6SkillPointOcr
             while (true)
             {
                 RunDeleteChildHandoff();
-                PrepareDriveSearchAfterDeleteChild();
                 FindDriveCarAndEnterBlueprint();
                 RunMinuteWLoopUntilSkillPointsFull();
                 RunPostMinuteReturnSequence();
@@ -76,19 +75,15 @@ namespace FH6SkillPointOcr
         private void RunDeleteChildHandoff()
         {
             SetStage("子程序: 自动删车");
-            SetStatus("full auto child", "衔接调用自动删车");
+            SetStatus("full auto child", "衔接调用自动删车；子程序结束后按 Esc 回车库标准位");
             List<string> args = BaseChildArgs(FH6AutomationConstants.Files.DeleteSafeStop);
             args.Add("--task");
             args.Add("delete");
             args.Add("--handoff");
             RunChildProcess(ResolveBinPath(FH6AutomationConstants.Files.DeleteVehicleExe), args, "delete");
             ReloadVehicleListStateFromHandoff("delete child completed");
-        }
-
-        private void PrepareDriveSearchAfterDeleteChild()
-        {
-            SetStage("找开蓝图车辆前置复位");
-            SetStatus("drive search handoff", "自动删车结束后 Esc -> 等待 0.5 秒，再进入找 900 分开蓝图车辆流程");
+            SetStage("自动删车交接");
+            SetStatus("delete handoff to garage standard", "删车结束停在选择车辆页面，按 Esc 回车库标准位；找 900 车流程不再额外 Esc");
             input.Tap("ESC");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
         }
@@ -120,6 +115,7 @@ namespace FH6SkillPointOcr
         private void FindDriveCarAndEnterBlueprint()
         {
             SetStage("找 900 分开蓝图车辆");
+            SetStatus("find drive vehicle startup", "从车库标准位开始：Enter -> 0.5 秒 -> Backspace -> 0.5 秒 -> 滚动+缓存/OCR点斯巴鲁");
             if (!grid.Locked) BuildGrid();
             ReopenSubaruListFromVehicleListForDriveSearch();
             ResetDeleteSelectionToFirstCell();

@@ -39,6 +39,7 @@ namespace FH6SkillPointOcr
             {
                 while (!fullAutoChildProcess.HasExited)
                 {
+                    PollUiCacheOcrGuards();
                     PollFullAutoHotkeysForChild(safeStopFile);
                     if (syncSkillPointsAfterExit && skillPointPoll.ElapsedMilliseconds >= FH6AutomationConstants.Timing.OneSecondMs)
                     {
@@ -55,6 +56,11 @@ namespace FH6SkillPointOcr
                 if (fullAutoUserSafeStopRequested) throw new CompletedException("Space+V 安全结束：子程序已退出，主程序停止。");
                 if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(FH6AutomationConstants.Files.MinuteLoopExe + " 退出码 " + fullAutoChildProcess.ExitCode);
                 if (syncSkillPointsAfterExit) LoadFullAutoSkillPoints("minute loop completed");
+            }
+            catch
+            {
+                KillChildIfRunning();
+                throw;
             }
             finally
             {
@@ -150,12 +156,18 @@ namespace FH6SkillPointOcr
             {
                 while (!fullAutoChildProcess.HasExited)
                 {
+                    PollUiCacheOcrGuards();
                     PollFullAutoHotkeysForChild(safeStopFile);
                     Thread.Sleep(FH6AutomationConstants.Timing.ChildProcessPollMs);
                 }
 
                 if (fullAutoUserSafeStopRequested) throw new CompletedException("Space+V 安全结束：子程序已退出，主程序停止。");
                 if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(Path.GetFileName(exePath) + " 退出码 " + fullAutoChildProcess.ExitCode);
+            }
+            catch
+            {
+                KillChildIfRunning();
+                throw;
             }
             finally
             {

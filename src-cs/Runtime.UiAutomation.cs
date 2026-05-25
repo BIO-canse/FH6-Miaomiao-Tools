@@ -64,8 +64,10 @@ namespace FH6SkillPointOcr
             if (!uiClickCache.TryGetValue(cacheKey, out point)) return false;
 
             DebugGate("ui click cache " + label, "复用 UI 坐标 " + label + " (" + point.X + "," + point.Y + ")");
-            SetOcrSummary("UI坐标缓存: " + label + " -> " + point.X + "," + point.Y + "，等待 0.5 秒后点击");
-            StartUiCacheOcrGuard(label, text);
+            SetOcrSummary("UI坐标缓存: " + label + " -> " + point.X + "," + point.Y + "，先做 OCR 保险校验");
+            UiCacheGuardRun guard = StartUiCacheOcrGuard(label, text);
+            WaitForUiCacheGuardCompletion(guard);
+            SetOcrSummary("UI坐标缓存: " + label + " OCR 保险通过，等待 0.5 秒后点击");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             input.MoveTo(point.X, point.Y);
             input.Click();

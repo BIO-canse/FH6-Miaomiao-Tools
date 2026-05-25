@@ -14,9 +14,9 @@ namespace FH6SkillPointOcr
         private readonly List<UiCacheGuardRun> uiCacheGuards = new List<UiCacheGuardRun>();
         private int uiCacheGuardIndex;
 
-        private void StartUiCacheOcrGuard(string label, string text)
+        private UiCacheGuardRun StartUiCacheOcrGuard(string label, string text)
         {
-            if (!SharedUiClickCacheAllowed()) return;
+            if (!SharedUiClickCacheAllowed()) return null;
             PollUiCacheOcrGuards();
 
             string exePath = ResolveBinPath(FH6AutomationConstants.Files.UiCacheGuardExe);
@@ -64,6 +64,7 @@ namespace FH6SkillPointOcr
 
                 SetOcrSummary("UI缓存保险OCR已启动: " + label + " pid=" + process.Id);
                 WaitForUiCacheGuardCapture(run);
+                return run;
             }
             finally
             {
@@ -87,6 +88,23 @@ namespace FH6SkillPointOcr
             }
 
             SetOcrSummary("UI缓存保险OCR: " + run.Label + " 截图标记未及时返回，继续主流程并后台等待结果");
+        }
+
+        private void WaitForUiCacheGuardCompletion(UiCacheGuardRun run)
+        {
+            if (run == null) return;
+            SetOcrSummary("UI缓存保险OCR等待结果: " + run.Label);
+            while (uiCacheGuards.Contains(run))
+            {
+                if (run.Process == null || run.Process.HasExited)
+                {
+                    PollUiCacheOcrGuards();
+                    continue;
+                }
+
+                ThrowIfFullAutoSafeStopWithoutChild();
+                Thread.Sleep(FH6AutomationConstants.Timing.ChildProcessPollMs);
+            }
         }
 
         private void PollUiCacheOcrGuards()
