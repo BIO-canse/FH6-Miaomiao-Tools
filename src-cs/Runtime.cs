@@ -44,6 +44,7 @@ namespace FH6SkillPointOcr
         private int debugStepCount;
         private int debugScreenshotCounter;
         private int remainingSkillPoints;
+        private long remainingCredits;
         private int superWheelspinCount;
         private int skillPointEventIndex;
         private int minuteLoopCompletedCount;
@@ -62,7 +63,7 @@ namespace FH6SkillPointOcr
         private bool subaruListBoundaryReached;
         private string subaruListBoundaryReason = "";
 
-        public Runtime(Config config, bool dryRun, bool stepDebug, int initialSkillPoints, AutomationTask task, bool useFullManufacturerFlow, VirtualListLoadMode virtualListLoadMode, bool handoffStart, string safeStopFile, string skillPointsStateFile, string skillPointsLogFile)
+        public Runtime(Config config, bool dryRun, bool stepDebug, int initialSkillPoints, long initialCredits, AutomationTask task, bool useFullManufacturerFlow, VirtualListLoadMode virtualListLoadMode, bool handoffStart, string safeStopFile, string skillPointsStateFile, string skillPointsLogFile)
         {
             this.config = config;
             this.task = task;
@@ -72,6 +73,7 @@ namespace FH6SkillPointOcr
             this.stepDebug = stepDebug;
             this.skillPointsStateFile = string.IsNullOrWhiteSpace(skillPointsStateFile) ? null : Path.GetFullPath(skillPointsStateFile);
             remainingSkillPoints = initialSkillPoints;
+            remainingCredits = initialCredits;
             firstRunSkillPoints = initialSkillPoints;
             input = new InputController(config.TapMs, config.RepeatIntervalMs, dryRun, safeStopFile);
             capture = new ScreenCapture(config.MonitorIndex);

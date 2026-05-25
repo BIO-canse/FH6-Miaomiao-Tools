@@ -1,5 +1,8 @@
 using System;
+using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using FH6AutomationShared;
 
@@ -13,14 +16,21 @@ internal static class SpaceDownEnterLoop
     private const int LoopDelayMs = FH6AutomationConstants.Timing.HalfSecondMs;
     private static volatile bool StopRequested;
     private static string SafeStopFile;
+    private static string BuyResultFile;
+    private static bool TrackCredits;
+    private static long InitialCredits;
+    private static long Credits;
+    private static long CreditCost = FH6AutomationConstants.Credits.VehiclePrice;
+    private static int CompletedRounds;
+    private static int RequestedRounds;
+    private static string StopReason = "completed";
 
     private static int Main(string[] args)
     {
         FH6FailureLog.InstallGlobalHandlers("SpaceDownEnterLoop");
         try
         {
-            Run(args);
-            return 0;
+            return Run(args);
         }
         catch (Exception ex)
         {
@@ -30,28 +40,41 @@ internal static class SpaceDownEnterLoop
         }
     }
 
-    private static void Run(string[] args)
+    private static int Run(string[] args)
     {
         int rounds = 0;
         int startupDelayMs = FH6AutomationConstants.Timing.StartupDelayMs;
         ParseArgs(args, out rounds, out startupDelayMs);
+        RequestedRounds = rounds;
+        InitialCredits = Credits;
+        WriteBuyResult("start");
 
         Console.Title = "SpaceDownEnterLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");
         Console.WriteLine(startupDelayMs > 0 ? "启动后先等待 10 秒，然后循环：空格、下、Enter、Enter、Enter。" : "立即开始循环：空格、下、Enter、Enter、Enter。");
         Console.WriteLine("每个键按下 0.1 秒，键与键之间等待 0.5 秒。");
         if (rounds > 0) Console.WriteLine("本次按参数运行 " + rounds + " 轮后自动退出。");
+        if (TrackCredits) Console.WriteLine("CR 保险：当前 {0}，每辆扣 {1}。", Credits, CreditCost);
         Console.WriteLine("按 Space+C 退出。请在第一次 10 秒等待内切到目标窗口。");
 
         if (!WaitOrExit(TimeSpan.FromMilliseconds(startupDelayMs)))
         {
             Console.WriteLine("已退出。");
-            return;
+            StopReason = "startup_exit";
+            WriteBuyResult(StopReason);
+            return 0;
         }
 
-        int completed = 0;
-        while (!ExitRequested() && (rounds <= 0 || completed < rounds))
+        while (!ExitRequested() && (rounds <= 0 || CompletedRounds < rounds))
         {
+            if (TrackCredits && Credits < CreditCost)
+            {
+                StopReason = "insufficient_credits";
+                Console.WriteLine("CR 不足：当前 {0}，需要 {1}。不会按 Space 购买，已停止。", Credits, CreditCost);
+                WriteBuyResult(StopReason);
+                return 0;
+            }
+
             TapKey(KeySpace);
             WaitOrExit(TimeSpan.FromMilliseconds(LoopDelayMs));
 
@@ -67,16 +90,25 @@ internal static class SpaceDownEnterLoop
             TapKey(KeyEnter);
             WaitOrExit(TimeSpan.FromMilliseconds(LoopDelayMs));
 
-            completed++;
-            if (rounds > 0) Console.WriteLine("已完成 " + completed + " / " + rounds + " 轮。");
+            CompletedRounds++;
+            if (TrackCredits) Credits = Math.Max(0, Credits - CreditCost);
+            WriteBuyResult("round_completed");
+            if (rounds > 0) Console.WriteLine("已完成 " + CompletedRounds + " / " + rounds + " 轮。");
+            if (TrackCredits) Console.WriteLine("CR 已扣除 {0}，剩余 {1}。", CreditCost, Credits);
             if (SafeStopRequested())
             {
                 Console.WriteLine("收到安全退出请求，当前轮已完成。");
+                StopReason = "safe_stop";
+                WriteBuyResult(StopReason);
                 break;
             }
         }
 
+        if (ExitRequested()) StopReason = "hotkey_exit";
+        else if (rounds > 0 && CompletedRounds >= rounds) StopReason = "completed";
+        WriteBuyResult(StopReason);
         Console.WriteLine("已退出。");
+        return 0;
     }
 
     private static void ParseArgs(string[] args, out int rounds, out int startupDelayMs)
@@ -99,6 +131,53 @@ internal static class SpaceDownEnterLoop
             {
                 SafeStopFile = args[++i];
             }
+            else if (arg == "--credits" && i + 1 < args.Length)
+            {
+                long value;
+                if (long.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 0)
+                {
+                    Credits = value;
+                    TrackCredits = true;
+                }
+            }
+            else if (arg == "--credit-cost" && i + 1 < args.Length)
+            {
+                long value;
+                if (long.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value > 0)
+                {
+                    CreditCost = value;
+                }
+            }
+            else if (arg == "--buy-result-file" && i + 1 < args.Length)
+            {
+                BuyResultFile = args[++i];
+            }
+        }
+    }
+
+    private static void WriteBuyResult(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(BuyResultFile)) return;
+        try
+        {
+            string directory = Path.GetDirectoryName(BuyResultFile);
+            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("time=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
+            sb.AppendLine("reason=" + reason);
+            sb.AppendLine("stop_reason=" + StopReason);
+            sb.AppendLine("requested_rounds=" + RequestedRounds.ToString(CultureInfo.InvariantCulture));
+            sb.AppendLine("completed_rounds=" + CompletedRounds.ToString(CultureInfo.InvariantCulture));
+            sb.AppendLine("track_credits=" + TrackCredits.ToString(CultureInfo.InvariantCulture));
+            sb.AppendLine("initial_credits=" + InitialCredits.ToString(CultureInfo.InvariantCulture));
+            sb.AppendLine("remaining_credits=" + Credits.ToString(CultureInfo.InvariantCulture));
+            sb.AppendLine("credit_cost=" + CreditCost.ToString(CultureInfo.InvariantCulture));
+            File.WriteAllText(BuyResultFile, sb.ToString(), Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("买车结果写入失败：{0}", ex.Message);
+            FH6FailureLog.Write("SpaceDownEnterLoop.WriteBuyResult", ex);
         }
     }
 

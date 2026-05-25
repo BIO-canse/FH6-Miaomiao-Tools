@@ -30,6 +30,7 @@ namespace FH6SkillPointOcr
         public string SkillPointsStateFile;
         public string SkillPointsLogFile;
         public int? SkillPoints;
+        public long? Credits;
 
         public static CliOptions Parse(string[] args)
         {
@@ -99,6 +100,14 @@ namespace FH6SkillPointOcr
                     if (int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 0)
                     {
                         options.SkillPoints = value;
+                    }
+                }
+                else if (arg == "--credits" && i + 1 < args.Length)
+                {
+                    long value;
+                    if (long.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 0)
+                    {
+                        options.Credits = value;
                     }
                 }
             }

@@ -31,7 +31,7 @@ namespace FH6SkillPointOcr
                 CliOptions options = CliOptions.Parse(args);
                 if (options.ShowHelp)
                 {
-                    Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--handoff] [--skill-points n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
+                    Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--handoff] [--skill-points n] [--credits n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
                     return 0;
                 }
 
@@ -52,6 +52,7 @@ namespace FH6SkillPointOcr
                 UserSettings.LoadOrCreate(config);
                 AutomationTask task = options.Task.HasValue ? options.Task.Value : GuessTaskFromExecutableName();
                 int skillPoints = task == AutomationTask.FullAuto ? AskSkillPointTotal(options) : (task == AutomationTask.SkillPoints ? AskSkillPointTotal(options) : int.MaxValue);
+                long credits = task == AutomationTask.FullAuto ? AskCreditTotal(options) : long.MaxValue;
                 bool stepDebug = mode == RunMode.Debug;
                 bool useFullManufacturerFlow = task == AutomationTask.SkillPoints || (task == AutomationTask.DeleteVehicles && options.ReuseVehicleListState);
                 VirtualListLoadMode listLoadMode = ResolveVirtualListLoadMode(task, options);
@@ -61,7 +62,7 @@ namespace FH6SkillPointOcr
                         ? "[STARTUP] 删除车辆：衔接启动，完整复用旧虚拟列表信息。"
                         : "[STARTUP] 删除车辆：独立启动，直接从当前车辆列表 OCR 建表；只有 --handoff 才衔接。");
                 }
-                Runtime runtime = new Runtime(config, options.DryRun, stepDebug, skillPoints, task, useFullManufacturerFlow, listLoadMode, options.ReuseVehicleListState, options.SafeStopFile, options.SkillPointsStateFile, options.SkillPointsLogFile);
+                Runtime runtime = new Runtime(config, options.DryRun, stepDebug, skillPoints, credits, task, useFullManufacturerFlow, listLoadMode, options.ReuseVehicleListState, options.SafeStopFile, options.SkillPointsStateFile, options.SkillPointsLogFile);
                 runtime.Run();
                 return 0;
             }
@@ -124,6 +125,27 @@ namespace FH6SkillPointOcr
                 if (input.Length == 0) return FH6AutomationConstants.SkillPoints.Max;
                 int value;
                 if (int.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 0)
+                {
+                    return value;
+                }
+                Console.WriteLine("输入无效，请输入 0 或正整数。");
+            }
+        }
+
+        private static long AskCreditTotal(CliOptions options)
+        {
+            if (options.Credits.HasValue)
+            {
+                Console.WriteLine("[STARTUP] 使用命令行传入的 CR：" + options.Credits.Value);
+                return options.Credits.Value;
+            }
+
+            while (true)
+            {
+                Console.Write("请输入当前 CR 点数（临时值，关闭程序后不保存；买车每辆按 " + FH6AutomationConstants.Credits.VehiclePrice + " CR 扣除）：");
+                string input = (Console.ReadLine() ?? "").Trim().Replace(",", "");
+                long value;
+                if (long.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 0)
                 {
                     return value;
                 }

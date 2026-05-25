@@ -215,7 +215,7 @@ namespace FH6SkillPointOcr
         private string SkillPointSummary()
         {
             if (task == AutomationTask.DeleteVehicles) return "删除车辆模式: 4=可删";
-            if (task == AutomationTask.FullAuto) return "技术点: " + remainingSkillPoints + " / " + FH6AutomationConstants.SkillPoints.Max;
+            if (task == AutomationTask.FullAuto) return "技术点: " + remainingSkillPoints + " / " + FH6AutomationConstants.SkillPoints.Max + "；CR: " + remainingCredits.ToString("N0", CultureInfo.InvariantCulture);
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "技术点: {0}, 每轮-{1}",

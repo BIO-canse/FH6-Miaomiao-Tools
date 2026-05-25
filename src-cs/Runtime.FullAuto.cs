@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using FH6AutomationShared;
 
 namespace FH6SkillPointOcr
@@ -69,7 +70,7 @@ namespace FH6SkillPointOcr
         private void RunFullAutoStartupPreflight()
         {
             ClearSharedUiClickCache("full auto startup");
-            SetOcrSummary("总控启动前置: 第一轮先定表；后续点技能点、删车、找 900 分状态 2 开蓝图车直接读写虚拟列表，不再做车辆格 OCR");
+            SetOcrSummary("总控启动前置: 当前 CR " + remainingCredits + "；买车每辆 " + FH6AutomationConstants.Credits.VehiclePrice + "；第一轮先定表，后续直接读写虚拟列表");
         }
 
         private void RunDeleteChildHandoff()
@@ -201,13 +202,19 @@ namespace FH6SkillPointOcr
             input.Tap("ENTER");
             FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
             MoveMouseToScreenBottomRight("idle after entering Subaru buy page");
-            RunVehicleBuyScriptRounds(buyRounds);
-            AppendPurchasedVehiclesToVirtualTable(buyRounds);
+            BuyScriptResult buyResult = RunVehicleBuyScriptRounds(buyRounds);
+            ApplyBuyScriptResult(buyResult);
+            AppendPurchasedVehiclesToVirtualTable(buyResult.CompletedRounds);
             FullAutoStageGap("自动买车脚本结束，准备返回菜单");
             for (int i = 0; i < FH6AutomationConstants.Flow.PreCreativeExitEscCount; i++)
             {
                 input.Tap("ESC");
                 FullAutoSleep(FH6AutomationConstants.Timing.HalfSecondMs);
+            }
+
+            if (buyResult.CompletedRounds < buyResult.RequestedRounds)
+            {
+                throw new CompletedException("CR 不足，买车已停止。本次需要补买 " + buyResult.RequestedRounds + " 辆，实际买到 " + buyResult.CompletedRounds + " 辆，剩余 CR " + remainingCredits + "，每辆需要 " + FH6AutomationConstants.Credits.VehiclePrice + "。");
             }
         }
 
@@ -225,17 +232,26 @@ namespace FH6SkillPointOcr
             return rounds;
         }
 
-        private void RunVehicleBuyScriptRounds(int rounds)
+        private BuyScriptResult RunVehicleBuyScriptRounds(int rounds)
         {
             SetStage("子程序: 自动买车");
             if (rounds <= 0)
             {
                 SetStatus("full auto child", "当前状态 3 已达到 " + FH6AutomationConstants.Flow.BuyTargetValidNewCount + "，跳过自动买车脚本");
-                return;
+                return new BuyScriptResult(0, 0, remainingCredits, "skipped");
             }
-            SetStatus("full auto child", "运行自动买车脚本 " + rounds + " 轮");
+
+            if (remainingCredits < FH6AutomationConstants.Credits.VehiclePrice)
+            {
+                SetStatus("full auto child", "CR 不足，跳过自动买车脚本；当前 CR " + remainingCredits + "，每辆 " + FH6AutomationConstants.Credits.VehiclePrice);
+                return new BuyScriptResult(rounds, 0, remainingCredits, "insufficient_credits");
+            }
+
+            SetStatus("full auto child", "运行自动买车脚本 " + rounds + " 轮；当前 CR " + remainingCredits + "，每辆 " + FH6AutomationConstants.Credits.VehiclePrice);
             string safeStopFile = SafeStopPath(FH6AutomationConstants.Files.BuySafeStop);
+            string resultFile = SafeStopPath("buy-result.txt");
             DeleteFileIfExists(safeStopFile);
+            DeleteFileIfExists(resultFile);
             List<string> args = new List<string>();
             args.Add("--rounds");
             args.Add(rounds.ToString(CultureInfo.InvariantCulture));
@@ -243,7 +259,79 @@ namespace FH6SkillPointOcr
             args.Add("0");
             args.Add("--safe-stop-file");
             args.Add(safeStopFile);
+            args.Add("--credits");
+            args.Add(remainingCredits.ToString(CultureInfo.InvariantCulture));
+            args.Add("--credit-cost");
+            args.Add(FH6AutomationConstants.Credits.VehiclePrice.ToString(CultureInfo.InvariantCulture));
+            args.Add("--buy-result-file");
+            args.Add(resultFile);
             RunChildProcess(ResolveBinPath(FH6AutomationConstants.Files.BuyLoopExe), args, "buy");
+            return ReadBuyScriptResult(resultFile, rounds);
+        }
+
+        private BuyScriptResult ReadBuyScriptResult(string path, int requestedRounds)
+        {
+            if (!File.Exists(path)) throw new FileNotFoundException("买车结果文件不存在，无法确认实际买车数量。", path);
+
+            Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string line in File.ReadAllLines(path))
+            {
+                int split = line.IndexOf('=');
+                if (split <= 0) continue;
+                values[line.Substring(0, split).Trim()] = line.Substring(split + 1).Trim();
+            }
+
+            int completed = ReadIntValue(values, "completed_rounds", 0);
+            long remaining = ReadLongValue(values, "remaining_credits", Math.Max(0, remainingCredits - completed * FH6AutomationConstants.Credits.VehiclePrice));
+            string stopReason;
+            if (!values.TryGetValue("stop_reason", out stopReason)) stopReason = "unknown";
+
+            completed = Math.Max(0, Math.Min(requestedRounds, completed));
+            return new BuyScriptResult(requestedRounds, completed, remaining, stopReason);
+        }
+
+        private void ApplyBuyScriptResult(BuyScriptResult result)
+        {
+            long before = remainingCredits;
+            remainingCredits = Math.Max(0, result.RemainingCredits);
+            SetOcrSummary(string.Format(
+                CultureInfo.InvariantCulture,
+                "买车CR: {0} -> {1}，本次买到 {2}/{3}，原因 {4}",
+                before,
+                remainingCredits,
+                result.CompletedRounds,
+                result.RequestedRounds,
+                result.StopReason));
+        }
+
+        private static int ReadIntValue(Dictionary<string, string> values, string key, int fallback)
+        {
+            string raw;
+            int value;
+            return values.TryGetValue(key, out raw) && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ? value : fallback;
+        }
+
+        private static long ReadLongValue(Dictionary<string, string> values, string key, long fallback)
+        {
+            string raw;
+            long value;
+            return values.TryGetValue(key, out raw) && long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) ? value : fallback;
+        }
+
+        private sealed class BuyScriptResult
+        {
+            public readonly int RequestedRounds;
+            public readonly int CompletedRounds;
+            public readonly long RemainingCredits;
+            public readonly string StopReason;
+
+            public BuyScriptResult(int requestedRounds, int completedRounds, long remainingCredits, string stopReason)
+            {
+                RequestedRounds = requestedRounds;
+                CompletedRounds = completedRounds;
+                RemainingCredits = remainingCredits;
+                StopReason = stopReason ?? "";
+            }
         }
 
         private CellKey FindDriveVehicleCell()

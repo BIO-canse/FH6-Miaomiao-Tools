@@ -108,6 +108,11 @@ namespace FH6AutomationShared
             public const int MinuteLoopEstimatedLoopMs = 48300;
         }
 
+        internal static class Credits
+        {
+            public const long VehiclePrice = 86000;
+        }
+
         internal static class VehicleState
         {
             public const int OtherManufacturerOrUnknown = 0;
