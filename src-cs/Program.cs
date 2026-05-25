@@ -49,6 +49,7 @@ namespace FH6SkillPointOcr
                     mode = ChooseRunMode(null);
                 }
 
+                OcrReader.Preflight(config);
                 UserSettings.LoadOrCreate(config);
                 AutomationTask task = options.Task.HasValue ? options.Task.Value : GuessTaskFromExecutableName();
                 int skillPoints = task == AutomationTask.FullAuto ? AskSkillPointTotal(options) : (task == AutomationTask.SkillPoints ? AskSkillPointTotal(options) : int.MaxValue);

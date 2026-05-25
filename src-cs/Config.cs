@@ -27,6 +27,8 @@ namespace FH6SkillPointOcr
         public string RapidOcrBridge;
         public string PaddleOcrPython;
         public string PaddleOcrBridge;
+        public string MediaOcrPowerShell;
+        public string MediaOcrBridge;
         public string TesseractCmd;
         public string OcrLanguages;
         public int MonitorIndex;
@@ -83,6 +85,8 @@ namespace FH6SkillPointOcr
             cfg.RapidOcrBridge = GetString(json, "rapidocr_bridge", Path.Combine("runtime", "rapidocr_bridge.py"));
             cfg.PaddleOcrPython = GetString(json, "paddleocr_python", "");
             cfg.PaddleOcrBridge = GetString(json, "paddleocr_bridge", Path.Combine("runtime", "paddleocr_bridge.py"));
+            cfg.MediaOcrPowerShell = GetString(json, "mediaocr_powershell", "");
+            cfg.MediaOcrBridge = GetString(json, "mediaocr_bridge", Path.Combine("runtime", "mediaocr_bridge.ps1"));
             cfg.TesseractCmd = GetString(json, "tesseract_cmd", Path.Combine("runtime", "tesseract", "tesseract.exe"));
             cfg.OcrLanguages = GetString(json, "ocr_languages", "chi_sim+eng");
             cfg.MonitorIndex = GetInt(json, "monitor_index", 1);

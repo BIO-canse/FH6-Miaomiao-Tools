@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import platform
 import sys
 import traceback
 
@@ -26,11 +27,22 @@ os.environ.setdefault("MODELSCOPE_CACHE", os.path.join(LOCAL_CACHE_ROOT, "models
 os.environ.setdefault("PADDLE_EXTENSION_DIR", os.path.join(LOCAL_CACHE_ROOT, "paddle_extension"))
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
-from PIL import Image
-import numpy as np
+Image = None
+np = None
+PaddleOCR = None
 
-with contextlib.redirect_stdout(sys.stderr):
-    from paddleocr import PaddleOCR
+
+def import_runtime_modules():
+    global Image, np, PaddleOCR
+    if Image is not None and np is not None and PaddleOCR is not None:
+        return
+    from PIL import Image as pil_image
+    import numpy as numpy_module
+    with contextlib.redirect_stdout(sys.stderr):
+        from paddleocr import PaddleOCR as paddle_ocr_class
+    Image = pil_image
+    np = numpy_module
+    PaddleOCR = paddle_ocr_class
 
 
 def box_to_rect(box):
@@ -78,6 +90,7 @@ def normalize_result(result):
 
 
 def read_image(image_base64):
+    import_runtime_modules()
     raw = base64.b64decode(image_base64)
     image = Image.open(io.BytesIO(raw)).convert("RGB")
     return np.array(image)
@@ -109,7 +122,67 @@ def require_model_dir(model_name):
     return path
 
 
+def run_self_check():
+    report = {
+        "code": 0,
+        "root": ROOT,
+        "site": SITE,
+        "model_root": MODEL_ROOT,
+        "cache_root": LOCAL_CACHE_ROOT,
+        "python_executable": sys.executable,
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "architecture": platform.architecture()[0],
+        "cwd": os.getcwd(),
+        "sys_path_head": sys.path[:8],
+        "checks": [],
+    }
+
+    def add_check(name, ok, detail=""):
+        report["checks"].append({"name": name, "ok": bool(ok), "detail": detail})
+        if not ok:
+            report["code"] = 500
+
+    try:
+        add_check("site_dir", os.path.isdir(SITE), SITE)
+        add_check("python_exe", os.path.isfile(sys.executable), sys.executable)
+        for dll_name in ["python312.dll", "vcruntime140.dll", "vcruntime140_1.dll"]:
+            dll_path = os.path.join(ROOT, "runtime", "python", dll_name)
+            add_check(dll_name, os.path.isfile(dll_path), dll_path)
+
+        det_model_dir = require_model_dir(DEFAULT_DET_MODEL_NAME)
+        rec_model_dir = require_model_dir(DEFAULT_REC_MODEL_NAME)
+        report["det_model_dir"] = det_model_dir
+        report["rec_model_dir"] = rec_model_dir
+
+        import_runtime_modules()
+        import paddle
+        report["pil_version"] = getattr(Image, "__version__", "")
+        report["numpy_version"] = getattr(np, "__version__", "")
+        report["paddle_version"] = getattr(getattr(paddle, "version", None), "full_version", "")
+        report["paddle_device"] = paddle.device.get_device()
+        report["paddle_compiled_with_cuda"] = bool(paddle.is_compiled_with_cuda())
+
+        check_output = io.StringIO()
+        with contextlib.redirect_stdout(check_output), contextlib.redirect_stderr(check_output):
+            paddle.utils.run_check()
+        report["paddle_run_check"] = check_output.getvalue()[-6000:]
+        add_check("paddle_run_check", True, "ok")
+    except Exception as exc:
+        report["code"] = 500
+        report["error"] = str(exc)
+        report["trace"] = traceback.format_exc(limit=12)
+
+    sys.stdout.write(json.dumps(report, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+    return 0 if report["code"] == 0 else 1
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-check":
+        return run_self_check()
+
+    import_runtime_modules()
     engine_kwargs = {
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
@@ -155,4 +228,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

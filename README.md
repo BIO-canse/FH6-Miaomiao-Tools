@@ -18,6 +18,11 @@
 
 ![大世界起始状态示例](assets/overworld-start.png)
 
+Release 会提供两个 OCR 版本：
+
+- `MediaOCR` 版：体积更小，使用 Windows 自带 `Media.Ocr`。推荐先试这个版本；如果系统没有中文/英文 OCR 语言能力，启动自检会直接报错并写入日志。
+- `PaddleOCR` 版：体积更大，内置 PaddleOCR PP-OCRv5 和便携 Python，识别能力更强；如果 MediaOCR 版识别不稳定或系统缺少 OCR 语言包，用这个版本。
+
 急停快捷键：
 
 - `Space+C`：立即急停，直接退出当前脚本。
@@ -32,7 +37,7 @@
 - `EnterTapLoop.exe`：快速开启大量抽奖、超级抽奖。
 - `README.pdf` / `README.md` / `使用说明.txt`：使用说明，优先看带图的 `README.pdf`。
 
-`bin/`、`runtime/`、`config/`、`assets/` 是程序运行需要的内部文件夹，不要删除或移动。`debug/`、`state/` 会保存自动生成的日志、OCR 失败信息和虚拟列表状态；如果程序出问题，请保留这两个文件夹，方便排查。未处理异常会写入 `debug/last-error.txt`，当天完整错误追加日志在 `debug/error-log-YYYYMMDD.log`。程序复用 UI 坐标缓存时会启动独立 OCR 保险进程校验当前页面；如果校验失败，主程序会自动退出并把现场写入 `debug/ui-cache-guard/` 和 `state/ui-cache-guard-*.result.txt`。
+`bin/`、`runtime/`、`config/`、`assets/` 是程序运行需要的内部文件夹，不要删除或移动。`debug/`、`state/` 会保存自动生成的日志、OCR 失败信息和虚拟列表状态；如果程序出问题，请保留这两个文件夹，方便排查。未处理异常会写入 `debug/last-error.txt`，当天完整错误追加日志在 `debug/error-log-YYYYMMDD.log`。PaddleOCR 版依赖自检结果会写入 `debug/ocr-dependency-check-last.txt`，MediaOCR 版依赖自检结果会写入 `debug/mediaocr-dependency-check-last.txt`。程序复用 UI 坐标缓存时会启动独立 OCR 保险进程校验当前页面；如果校验失败，主程序会自动退出并把现场写入 `debug/ui-cache-guard/` 和 `state/ui-cache-guard-*.result.txt`。
 
 ## 前置准备
 
@@ -48,7 +53,11 @@
 
 车库里还需要至少有一辆“所属制造商排序在斯巴鲁后方”的任意车辆。脚本需要靠它确认列表已经滚出斯巴鲁制造商区域；如果斯巴鲁后面没有任何其它制造商车辆，程序可能无法判断斯巴鲁区域已经结束。
 
-建议开始前先手动买几辆不同的斯巴鲁车辆，并且多买一些用于刷技术点的指定车型。滚出制造商边界这件事不读取游戏内存，只能依赖 OCR 和虚拟列表判断；斯巴鲁车辆太少时更容易碰到边界判断问题。
+建议开始前先手动买几辆不同的斯巴鲁车辆，并且多买一些用于刷技术点的指定车型。滚出制造商边界这件事不读取游戏内存，只能依赖 OCR 和虚拟列表判断；斯巴鲁车辆太少时，横向滚动很容易直接碰到制造商边界，导致虚拟列表和实际选中位置错位。
+
+如果你在斯巴鲁列表里看到类似下图这种情况：左边还是目标车/斯巴鲁，右边已经混入沃尔沃、五菱、雪佛兰等其它制造商，或者中间出现大片空格，说明车库里斯巴鲁车辆太少，脚本继续滚动时更容易错位。解决方式是先手动补一些斯巴鲁车辆，尤其是多买几辆用于刷技术点的 `IMPREZA 22B-STI VERSION`，再运行全自动脚本。
+
+![车辆太少导致滚到制造商边界的示例](assets/garage-boundary-too-few-cars.png)
 
 ### 2. 设置游戏难度
 
@@ -136,7 +145,9 @@ Enter
 
 ## 鸣谢
 
-本工具当前默认 OCR 使用 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv5 mobile 流程。它内部包含文本检测和文本识别两个组件，但对本工具来说就是一个 OCR 后端。感谢 PaddleOCR 项目提供高质量的中文、英文文字识别能力。
+PaddleOCR 版使用 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv5 mobile 流程。感谢 PaddleOCR 项目提供高质量的中文、英文文字识别能力。
+
+MediaOCR 版使用 Windows 自带的 `Windows.Media.Ocr` 能力，不额外内置第三方 OCR 模型。
 
 ## 重新编译
 
@@ -147,7 +158,7 @@ Enter
 - `legacy-scripts/src/`：仍会被总构建脚本引用的旧小工具源码。
 - `docs/`：当前流程、虚拟表、重构记录和实现说明。
 - `config/default.json`：默认配置模板。
-- `runtime/*.py`：OCR 桥接脚本；运行依赖和模型不会提交到仓库，发布包或本地环境中准备。
+- `runtime/*.py` / `runtime/*.ps1`：OCR 桥接脚本；PaddleOCR 运行依赖和模型不会提交到仓库，发布包或本地环境中准备。
 
 需要重新编译时，在仓库根目录运行：
 

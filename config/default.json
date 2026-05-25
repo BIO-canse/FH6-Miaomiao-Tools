@@ -4,6 +4,8 @@
   "rapidocr_bridge": "runtime/rapidocr_bridge.py",
   "paddleocr_python": "",
   "paddleocr_bridge": "runtime/paddleocr_bridge.py",
+  "mediaocr_powershell": "",
+  "mediaocr_bridge": "runtime/mediaocr_bridge.ps1",
   "tesseract_cmd": "runtime/tesseract/tesseract.exe",
   "ocr_languages": "chi_sim+eng",
   "monitor_index": 1,

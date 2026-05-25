@@ -21,6 +21,7 @@ namespace FH6SkillPointOcr
     internal sealed class OcrReader : IDisposable
     {
         private readonly Config config;
+        private readonly bool useMediaOcr;
         private readonly bool usePaddleOcr;
         private readonly bool useRapidOcr;
         private readonly JavaScriptSerializer jsonSerializer = new JavaScriptSerializer();
@@ -29,14 +30,19 @@ namespace FH6SkillPointOcr
         private readonly string tempDir;
         private readonly string paddleOcrPython;
         private readonly string paddleOcrBridge;
+        private readonly string mediaOcrPowerShell;
+        private readonly string mediaOcrBridge;
         private readonly string rapidOcrPython;
         private readonly string rapidOcrBridge;
         private readonly string debugImageDir;
+        private readonly string diagnosticsDir;
         private readonly Func<bool> shouldStop;
         private readonly Action pollSafeStop;
         private Process paddleOcrProcess;
+        private Process mediaOcrProcess;
         private Process rapidOcrProcess;
         private readonly StringBuilder paddleOcrErrors = new StringBuilder();
+        private readonly StringBuilder mediaOcrErrors = new StringBuilder();
         private readonly StringBuilder rapidOcrErrors = new StringBuilder();
 
         public OcrReader(Config config, string debugImageDir)
@@ -44,22 +50,39 @@ namespace FH6SkillPointOcr
         {
         }
 
+        public static void Preflight(Config config)
+        {
+            using (new OcrReader(config, null))
+            {
+            }
+        }
+
         public OcrReader(Config config, string debugImageDir, Func<bool> shouldStop, Action pollSafeStop)
         {
             this.config = config;
             this.debugImageDir = debugImageDir;
+            diagnosticsDir = config.ResolvePath(config.DebugDir);
             this.shouldStop = shouldStop;
             this.pollSafeStop = pollSafeStop;
             jsonSerializer.MaxJsonLength = int.MaxValue;
+            useMediaOcr = string.Equals(config.OcrEngine, "mediaocr", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(config.OcrEngine, "windowsmediaocr", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(config.OcrEngine, "windowsocr", StringComparison.OrdinalIgnoreCase);
             usePaddleOcr = string.Equals(config.OcrEngine, "paddleocr", StringComparison.OrdinalIgnoreCase);
             useRapidOcr = string.Equals(config.OcrEngine, "rapidocr", StringComparison.OrdinalIgnoreCase);
             paddleOcrPython = ResolvePython(config, config.PaddleOcrPython, "FH6_PADDLEOCR_PYTHON");
             paddleOcrBridge = config.ResolvePath(config.PaddleOcrBridge);
+            mediaOcrPowerShell = ResolvePowerShell(config, config.MediaOcrPowerShell, "FH6_MEDIAOCR_POWERSHELL");
+            mediaOcrBridge = config.ResolvePath(config.MediaOcrBridge);
             rapidOcrPython = ResolvePython(config, config.RapidOcrPython, "FH6_RAPIDOCR_PYTHON");
             rapidOcrBridge = config.ResolvePath(config.RapidOcrBridge);
             tesseractPath = config.ResolvePath(config.TesseractCmd);
             tesseractDir = Path.GetDirectoryName(tesseractPath);
-            if (usePaddleOcr)
+            if (useMediaOcr)
+            {
+                ValidateMediaOcrRuntime();
+            }
+            else if (usePaddleOcr)
             {
                 if (!File.Exists(paddleOcrPython)) throw new FileNotFoundException("找不到 PaddleOCR Python", paddleOcrPython);
                 if (!File.Exists(paddleOcrBridge)) throw new FileNotFoundException("找不到 PaddleOCR bridge", paddleOcrBridge);
@@ -76,6 +99,7 @@ namespace FH6SkillPointOcr
             }
             tempDir = Path.Combine(Path.GetTempPath(), "FH6SkillPointOcr", "ocr-temp");
             Directory.CreateDirectory(tempDir);
+            Directory.CreateDirectory(diagnosticsDir);
             if (!string.IsNullOrWhiteSpace(debugImageDir)) Directory.CreateDirectory(debugImageDir);
         }
 
@@ -90,6 +114,7 @@ namespace FH6SkillPointOcr
             if (!File.Exists(paddleLib)) throw new FileNotFoundException("找不到 PaddlePaddle 核心库，请完整解压发布包或检查杀毒软件是否隔离文件。", paddleLib);
             if (!File.Exists(det)) throw new FileNotFoundException("找不到 PaddleOCR 检测模型，请下载完整新版压缩包并完整解压。", det);
             if (!File.Exists(rec)) throw new FileNotFoundException("找不到 PaddleOCR 识别模型，请下载完整新版压缩包并完整解压。", rec);
+            RunPaddleDependencySelfCheck(site, det, rec, paddleLib);
         }
 
         private void ValidateBundledPythonRuntime()
@@ -105,6 +130,278 @@ namespace FH6SkillPointOcr
             if (!File.Exists(vcRuntimeExtra)) throw new FileNotFoundException("包内 Python 不完整，缺少 vcruntime140_1.dll。请完整解压发布包。", vcRuntimeExtra);
         }
 
+        private void ValidateMediaOcrRuntime()
+        {
+            string reportPath = Path.Combine(diagnosticsDir, "mediaocr-dependency-check-last.txt");
+            string stampPath = Path.Combine(diagnosticsDir, "mediaocr-dependency-check-ok.txt");
+            string signature = BuildMediaOcrDependencySignature();
+
+            try
+            {
+                Directory.CreateDirectory(diagnosticsDir);
+                bool forceCheck = string.Equals(Environment.GetEnvironmentVariable("FH6_FORCE_OCR_DEPENDENCY_CHECK"), "1", StringComparison.OrdinalIgnoreCase);
+                if (!forceCheck && IsPaddleDependencyStampCurrent(stampPath, signature))
+                {
+                    if (!File.Exists(reportPath))
+                    {
+                        File.WriteAllText(
+                            reportPath,
+                            BuildDependencyReportHeader("MediaOCR dependency self-check skipped: matching success stamp.") +
+                            "powershell=" + mediaOcrPowerShell + "\r\n" +
+                            "powershell_exists=" + File.Exists(mediaOcrPowerShell) + "\r\n" +
+                            "bridge=" + mediaOcrBridge + "\r\n" +
+                            "bridge_exists=" + File.Exists(mediaOcrBridge) + "\r\n" +
+                            "signature=" + signature + "\r\n",
+                            Encoding.UTF8);
+                    }
+                    return;
+                }
+
+                if (!File.Exists(mediaOcrBridge)) throw new FileNotFoundException("找不到 MediaOCR bridge", mediaOcrBridge);
+
+                ProcessStartInfo psi = CreateMediaOcrProcessInfo("-SelfCheck");
+                using (Process process = Process.Start(psi))
+                {
+                    System.Threading.Tasks.Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+                    System.Threading.Tasks.Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+                    WaitForProcessExitWithHotkeys(process, FH6AutomationConstants.Ocr.BridgeInitTimeoutMs, "MediaOCR 依赖自检超时");
+                    string stdout = stdoutTask.Result;
+                    string stderr = stderrTask.Result;
+                    string report =
+                        BuildDependencyReportHeader("MediaOCR dependency self-check") +
+                        "powershell=" + mediaOcrPowerShell + "\r\n" +
+                        "powershell_exists=" + File.Exists(mediaOcrPowerShell) + "\r\n" +
+                        "bridge=" + mediaOcrBridge + "\r\n" +
+                        "bridge_exists=" + File.Exists(mediaOcrBridge) + "\r\n" +
+                        "configured_languages=" + config.OcrLanguages + "\r\n" +
+                        "ocr_scale=" + config.OcrScale.ToString("0.###", CultureInfo.InvariantCulture) + "\r\n" +
+                        "signature=" + signature + "\r\n" +
+                        "exit_code=" + process.ExitCode.ToString(CultureInfo.InvariantCulture) + "\r\n\r\nSTDOUT:\r\n" + stdout + "\r\nSTDERR:\r\n" + stderr;
+                    File.WriteAllText(reportPath, report, Encoding.UTF8);
+                    if (process.ExitCode != 0)
+                    {
+                        throw new InvalidOperationException("MediaOCR 依赖自检失败，已写入 " + reportPath + "。当前系统可能缺少 Windows 中文/英文 OCR 语言包，或 PowerShell/WinRT OCR 不可用。");
+                    }
+                    File.WriteAllText(stampPath, signature, Encoding.UTF8);
+                }
+            }
+            catch (Exception ex)
+            {
+                FH6FailureLog.Write("OcrReader.MediaOcrDependencyCheck", ex);
+                if (ex is InvalidOperationException) throw;
+                throw new InvalidOperationException("MediaOCR 自检无法完成。请确认系统支持 Windows.Media.Ocr，或下载 PaddleOCR 版。日志：" + reportPath, ex);
+            }
+        }
+
+        private string BuildMediaOcrDependencySignature()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append("engine=mediaocr|");
+            sb.Append("base=").Append(config.BaseDir).Append("|");
+            sb.Append("ps=").Append(mediaOcrPowerShell).Append("|");
+            sb.Append("bridge=").Append(mediaOcrBridge).Append("|");
+            sb.Append("bridge_mtime=").Append(File.Exists(mediaOcrBridge) ? File.GetLastWriteTimeUtc(mediaOcrBridge).Ticks.ToString(CultureInfo.InvariantCulture) : "missing").Append("|");
+            sb.Append("languages=").Append(config.OcrLanguages).Append("|");
+            sb.Append("scale=").Append(config.OcrScale.ToString("0.###", CultureInfo.InvariantCulture)).Append("|");
+            sb.Append("os=").Append(Environment.OSVersion).Append("|");
+            sb.Append("is64=").Append(Environment.Is64BitOperatingSystem);
+            return sb.ToString();
+        }
+
+        private void RunPaddleDependencySelfCheck(string site, string det, string rec, string paddleLib)
+        {
+            string reportPath = Path.Combine(diagnosticsDir, "ocr-dependency-check-last.txt");
+            string stampPath = Path.Combine(diagnosticsDir, "ocr-dependency-check-ok.txt");
+            string signature = BuildPaddleDependencySignature(site, det, rec, paddleLib);
+
+            try
+            {
+                Directory.CreateDirectory(diagnosticsDir);
+                bool forceCheck = string.Equals(Environment.GetEnvironmentVariable("FH6_FORCE_OCR_DEPENDENCY_CHECK"), "1", StringComparison.OrdinalIgnoreCase);
+                if (!forceCheck && IsPaddleDependencyStampCurrent(stampPath, signature))
+                {
+                    if (!File.Exists(reportPath))
+                    {
+                        File.WriteAllText(
+                            reportPath,
+                            BuildDependencyReportHeader("PaddleOCR dependency self-check skipped: matching success stamp.") +
+                            "python=" + paddleOcrPython + "\r\n" +
+                            "python_exists=" + File.Exists(paddleOcrPython) + "\r\n" +
+                            "bridge=" + paddleOcrBridge + "\r\n" +
+                            "bridge_exists=" + File.Exists(paddleOcrBridge) + "\r\n" +
+                            "signature=" + signature + "\r\n" +
+                            "stamp=" + stampPath + "\r\n",
+                            Encoding.UTF8);
+                    }
+                    return;
+                }
+
+                ProcessStartInfo psi = CreateBridgeProcessInfo(paddleOcrPython, paddleOcrBridge, "--self-check");
+                using (Process process = new Process())
+                {
+                    process.StartInfo = psi;
+                    process.Start();
+
+                    System.Threading.Tasks.Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+                    System.Threading.Tasks.Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+                    WaitForProcessExitWithHotkeys(process, FH6AutomationConstants.Ocr.BridgeInitTimeoutMs, "PaddleOCR 依赖自检超时");
+
+                    string stdout = stdoutTask.Result ?? "";
+                    string stderr = stderrTask.Result ?? "";
+                    string exitDescription = DescribeNativeExitCode(process.ExitCode);
+                    string report =
+                        BuildDependencyReportHeader("PaddleOCR dependency self-check") +
+                        "python=" + paddleOcrPython + "\r\n" +
+                        "python_exists=" + File.Exists(paddleOcrPython) + "\r\n" +
+                        "bridge=" + paddleOcrBridge + "\r\n" +
+                        "bridge_exists=" + File.Exists(paddleOcrBridge) + "\r\n" +
+                        "signature=" + signature + "\r\n" +
+                        "exit_code=" + process.ExitCode.ToString(CultureInfo.InvariantCulture) + "\r\n" +
+                        "exit_description=" + exitDescription + "\r\n" +
+                        "\r\nSTDOUT:\r\n" + stdout + "\r\n" +
+                        "\r\nSTDERR:\r\n" + stderr + "\r\n";
+                    File.WriteAllText(reportPath, report, Encoding.UTF8);
+
+                    bool ok = process.ExitCode == 0 && SelfCheckJsonOk(stdout);
+                    if (!ok)
+                    {
+                        throw new InvalidOperationException("PaddleOCR 依赖自检失败，已写入 " + reportPath + "。" + OcrCrashHint(process.ExitCode, stderr, stdout));
+                    }
+
+                    File.WriteAllText(
+                        stampPath,
+                        "signature=" + signature + "\r\n" +
+                        "checked_at=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + "\r\n",
+                        Encoding.UTF8);
+                }
+            }
+            catch (Exception ex)
+            {
+                FH6FailureLog.Write("OcrReader.PaddleDependencySelfCheck", ex);
+                if (ex is InvalidOperationException) throw;
+                throw new InvalidOperationException("PaddleOCR 依赖自检无法完成，已写入 debug/last-error.txt。请确认完整解压发布包，并检查杀毒软件是否拦截 runtime 目录。", ex);
+            }
+        }
+
+        private bool SelfCheckJsonOk(string stdout)
+        {
+            if (string.IsNullOrWhiteSpace(stdout)) return false;
+            string line = stdout.Trim().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (string.IsNullOrWhiteSpace(line)) return false;
+            try
+            {
+                Dictionary<string, object> root = jsonSerializer.Deserialize<Dictionary<string, object>>(line);
+                object codeValue;
+                return root.TryGetValue("code", out codeValue) && Convert.ToInt32(codeValue, CultureInfo.InvariantCulture) == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private string BuildDependencyReportHeader(string title)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("title=" + title);
+            sb.AppendLine("time=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
+            sb.AppendLine("base_dir=" + config.BaseDir);
+            sb.AppendLine("current_dir=" + Environment.CurrentDirectory);
+            sb.AppendLine("process_64bit=" + Environment.Is64BitProcess);
+            sb.AppendLine("os_64bit=" + Environment.Is64BitOperatingSystem);
+            sb.AppendLine("os_version=" + Environment.OSVersion);
+            sb.AppendLine("dotnet=" + Environment.Version);
+            return sb.ToString();
+        }
+
+        private string BuildPaddleDependencySignature(string site, string det, string rec, string paddleLib)
+        {
+            return string.Join(
+                "|",
+                new[]
+                {
+                    "machine=" + Environment.MachineName,
+                    "os=" + Environment.OSVersion,
+                    "base=" + config.BaseDir,
+                    FileSignature(paddleOcrPython),
+                    FileSignature(paddleOcrBridge),
+                    DirectorySignature(site),
+                    FileSignature(det),
+                    FileSignature(rec),
+                    FileSignature(paddleLib),
+                    FileSignature(Path.Combine(config.BaseDir, "runtime", "python", "python312.dll")),
+                    FileSignature(Path.Combine(config.BaseDir, "runtime", "python", "vcruntime140.dll")),
+                    FileSignature(Path.Combine(config.BaseDir, "runtime", "python", "vcruntime140_1.dll"))
+                });
+        }
+
+        private static string FileSignature(string path)
+        {
+            try
+            {
+                FileInfo info = new FileInfo(path);
+                if (!info.Exists) return path + "=missing";
+                return path + "=" + info.Length.ToString(CultureInfo.InvariantCulture) + ":" + info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return path + "=error";
+            }
+        }
+
+        private static string DirectorySignature(string path)
+        {
+            try
+            {
+                DirectoryInfo info = new DirectoryInfo(path);
+                if (!info.Exists) return path + "=missing";
+                return path + "=dir:" + info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return path + "=error";
+            }
+        }
+
+        private static bool IsPaddleDependencyStampCurrent(string stampPath, string signature)
+        {
+            try
+            {
+                if (!File.Exists(stampPath)) return false;
+                string text = File.ReadAllText(stampPath, Encoding.UTF8);
+                return text.Contains("signature=" + signature);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string OcrCrashHint(int exitCode, string stderr, string stdout)
+        {
+            string native = DescribeNativeExitCode(exitCode);
+            string text = ((stderr ?? "") + "\n" + (stdout ?? "")).ToLowerInvariant();
+            if (text.Contains("dll load failed") || text.Contains("找不到指定的模块"))
+            {
+                native += "；日志中出现 DLL load failed，通常是 VC++ 运行库、包内 DLL、Paddle 原生依赖缺失或被杀毒软件隔离。";
+            }
+            if (text.Contains("no module named"))
+            {
+                native += "；日志中出现 no module named，通常是没有完整解压 runtime/paddleocr-py。";
+            }
+            return string.IsNullOrWhiteSpace(native) ? "" : "\r\n" + native;
+        }
+
+        private static string DescribeNativeExitCode(int exitCode)
+        {
+            uint code = unchecked((uint)exitCode);
+            if (code == 0) return "正常退出";
+            if (code == 0xC0000135) return "Windows 原生加载失败：缺少 DLL 或 DLL 被拦截，常见于 VC++ 运行库/包内 DLL 缺失。";
+            if (code == 0xC000007B) return "Windows 原生加载失败：32/64 位 DLL 不匹配或 DLL 损坏。";
+            if (code == 0xC0000005) return "Windows 原生库访问冲突：可能与 PaddlePaddle 原生库、显卡驱动或底层运行库有关。";
+            return "0x" + code.ToString("X8", CultureInfo.InvariantCulture);
+        }
+
         public OcrSnapshot Read(Screenshot screenshot)
         {
             return Read(screenshot, config.OcrPsm, null);
@@ -117,9 +414,33 @@ namespace FH6SkillPointOcr
 
         public OcrSnapshot Read(Screenshot screenshot, int psm, string debugLabel)
         {
+            if (useMediaOcr) return ReadMediaOcr(screenshot, debugLabel);
             if (usePaddleOcr) return ReadPaddleOcr(screenshot, debugLabel);
             if (useRapidOcr) return ReadRapidOcr(screenshot, debugLabel);
             return ReadTesseract(screenshot, psm, debugLabel);
+        }
+
+        private OcrSnapshot ReadMediaOcr(Screenshot screenshot, string debugLabel)
+        {
+            EnsureMediaOcrProcess();
+            OcrEncodedImage image = EncodeOcrImage(screenshot, debugLabel);
+            mediaOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + image.Base64 + "\"}");
+            mediaOcrProcess.StandardInput.Flush();
+
+            string line = ReadBridgeLineWithTimeout(
+                mediaOcrProcess,
+                FH6AutomationConstants.Ocr.BridgeRequestTimeoutMs,
+                "MediaOCR 识别超时",
+                mediaOcrErrors);
+            if (line == null)
+            {
+                throw new InvalidOperationException("MediaOCR 进程没有返回结果。" + MediaOcrErrorSuffix());
+            }
+
+            SaveDebugText(debugLabel, "ocr-response", line);
+            OcrSnapshot snapshot = ParseOcrJson(line, screenshot, image.Scale, "MediaOCR", MediaOcrErrorSuffix());
+            AttachBridgeDiagnostics(snapshot, "MediaOCR", line, mediaOcrProcess, mediaOcrPowerShell, mediaOcrBridge, mediaOcrErrors, Path.Combine(diagnosticsDir, "mediaocr-dependency-check-last.txt"));
+            return snapshot;
         }
 
         private OcrSnapshot ReadTesseract(Screenshot screenshot, int psm, string debugLabel)
@@ -536,6 +857,40 @@ namespace FH6SkillPointOcr
             return Regex.Replace(normalized, @"[^\u4e00-\u9fffA-Za-z0-9]", "");
         }
 
+        private void EnsureMediaOcrProcess()
+        {
+            if (mediaOcrProcess != null && !mediaOcrProcess.HasExited) return;
+
+            mediaOcrErrors.Length = 0;
+            ProcessStartInfo psi = CreateMediaOcrProcessInfo("");
+
+            mediaOcrProcess = new Process();
+            mediaOcrProcess.StartInfo = psi;
+            mediaOcrProcess.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+            {
+                if (!string.IsNullOrEmpty(e.Data))
+                {
+                    lock (mediaOcrErrors)
+                    {
+                        if (mediaOcrErrors.Length < 12000) mediaOcrErrors.AppendLine(e.Data);
+                    }
+                }
+            };
+
+            mediaOcrProcess.Start();
+            mediaOcrProcess.BeginErrorReadLine();
+
+            string ready = ReadBridgeLineWithTimeout(
+                mediaOcrProcess,
+                FH6AutomationConstants.Ocr.BridgeInitTimeoutMs,
+                "MediaOCR 初始化超时",
+                mediaOcrErrors);
+            if (ready == null || !ready.Contains("\"ready\""))
+            {
+                throw new InvalidOperationException("MediaOCR 初始化失败。" + MediaOcrErrorSuffix());
+            }
+        }
+
         private void EnsurePaddleOcrProcess()
         {
             if (paddleOcrProcess != null && !paddleOcrProcess.HasExited) return;
@@ -669,10 +1024,15 @@ namespace FH6SkillPointOcr
 
         private ProcessStartInfo CreateBridgeProcessInfo(string pythonPath, string bridgePath)
         {
+            return CreateBridgeProcessInfo(pythonPath, bridgePath, "");
+        }
+
+        private ProcessStartInfo CreateBridgeProcessInfo(string pythonPath, string bridgePath, string extraArguments)
+        {
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = pythonPath;
             psi.WorkingDirectory = config.BaseDir;
-            psi.Arguments = "\"" + bridgePath + "\"";
+            psi.Arguments = "\"" + bridgePath + "\"" + (string.IsNullOrWhiteSpace(extraArguments) ? "" : " " + extraArguments);
             psi.UseShellExecute = false;
             psi.RedirectStandardInput = true;
             psi.RedirectStandardOutput = true;
@@ -687,7 +1047,30 @@ namespace FH6SkillPointOcr
             return psi;
         }
 
+        private ProcessStartInfo CreateMediaOcrProcessInfo(string extraArguments)
+        {
+            ProcessStartInfo psi = new ProcessStartInfo();
+            psi.FileName = mediaOcrPowerShell;
+            psi.WorkingDirectory = config.BaseDir;
+            psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + mediaOcrBridge + "\"" + (string.IsNullOrWhiteSpace(extraArguments) ? "" : " " + extraArguments);
+            psi.UseShellExecute = false;
+            psi.RedirectStandardInput = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            psi.CreateNoWindow = true;
+            psi.StandardOutputEncoding = Encoding.UTF8;
+            psi.StandardErrorEncoding = Encoding.UTF8;
+            psi.EnvironmentVariables["FH6_MEDIAOCR_LANGUAGES"] = config.OcrLanguages ?? "";
+            psi.EnvironmentVariables["FH6_MEDIAOCR_SCALE"] = config.OcrScale.ToString("0.###", CultureInfo.InvariantCulture);
+            return psi;
+        }
+
         private void AttachBridgeDiagnostics(OcrSnapshot snapshot, string engineName, string rawResponse, Process process, string pythonPath, string bridgePath, StringBuilder errors)
+        {
+            AttachBridgeDiagnostics(snapshot, engineName, rawResponse, process, pythonPath, bridgePath, errors, Path.Combine(diagnosticsDir, "ocr-dependency-check-last.txt"));
+        }
+
+        private void AttachBridgeDiagnostics(OcrSnapshot snapshot, string engineName, string rawResponse, Process process, string executablePath, string bridgePath, StringBuilder errors, string dependencyReportPath)
         {
             if (snapshot == null) return;
 
@@ -703,10 +1086,11 @@ namespace FH6SkillPointOcr
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("engine=" + engineName);
             sb.AppendLine("base_dir=" + config.BaseDir);
-            sb.AppendLine("python=" + pythonPath);
-            sb.AppendLine("python_exists=" + File.Exists(pythonPath));
+            sb.AppendLine("executable=" + executablePath);
+            sb.AppendLine("executable_exists=" + File.Exists(executablePath));
             sb.AppendLine("bridge=" + bridgePath);
             sb.AppendLine("bridge_exists=" + File.Exists(bridgePath));
+            sb.AppendLine("dependency_report=" + dependencyReportPath);
             sb.AppendLine("ocr_scale=" + config.OcrScale.ToString("0.###", CultureInfo.InvariantCulture));
             if (process == null)
             {
@@ -744,6 +1128,12 @@ namespace FH6SkillPointOcr
             {
                 string error = root.ContainsKey("error") ? Convert.ToString(root["error"], CultureInfo.InvariantCulture) : rawJson;
                 throw new InvalidOperationException(engineName + " 执行失败：" + error + errorSuffix);
+            }
+
+            object responseScaleObj;
+            if (root.TryGetValue("scale", out responseScaleObj))
+            {
+                imageScale = ParseDouble(Convert.ToString(responseScaleObj, CultureInfo.InvariantCulture), imageScale);
             }
 
             List<OcrMatch> matches = new List<OcrMatch>();
@@ -826,6 +1216,15 @@ namespace FH6SkillPointOcr
             {
                 if (paddleOcrErrors.Length == 0) return "";
                 return "\r\nPaddleOCR stderr:\r\n" + paddleOcrErrors;
+            }
+        }
+
+        private string MediaOcrErrorSuffix()
+        {
+            lock (mediaOcrErrors)
+            {
+                if (mediaOcrErrors.Length == 0) return "";
+                return "\r\nMediaOCR stderr:\r\n" + mediaOcrErrors;
             }
         }
 
@@ -913,9 +1312,28 @@ namespace FH6SkillPointOcr
             return "python.exe";
         }
 
+        private static string ResolvePowerShell(Config config, string configuredPath, string envName)
+        {
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                return Path.IsPathRooted(configuredPath)
+                    ? configuredPath
+                    : config.ResolvePath(configuredPath);
+            }
+
+            string env = Environment.GetEnvironmentVariable(envName);
+            if (!string.IsNullOrWhiteSpace(env)) return env;
+
+            string systemPowerShell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+            if (File.Exists(systemPowerShell)) return systemPowerShell;
+
+            return "powershell.exe";
+        }
+
         public void Dispose()
         {
             StopBridgeProcess(ref paddleOcrProcess);
+            StopBridgeProcess(ref mediaOcrProcess);
             StopBridgeProcess(ref rapidOcrProcess);
         }
 
