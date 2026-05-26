@@ -33,6 +33,7 @@ namespace FH6SkillPointOcr
         private readonly ScreenCapture capture;
         private readonly OcrReader ocr;
         private readonly GridGeometry grid;
+        private readonly SemanticCellMapper cellMapper;
         private readonly VirtualVehicleList vehicleList;
         private readonly OverlayRenderer overlay;
         private readonly string debugDir;
@@ -80,6 +81,7 @@ namespace FH6SkillPointOcr
             input = new InputController(config.TapMs, config.RepeatIntervalMs, dryRun, safeStopFile);
             capture = new ScreenCapture(config.MonitorIndex);
             grid = new GridGeometry(config);
+            cellMapper = new SemanticCellMapper(grid);
             debugDir = config.ResolvePath(config.DebugDir);
             Directory.CreateDirectory(debugDir);
             this.skillPointsLogFile = ResolveSkillPointsLogFile(skillPointsLogFile);

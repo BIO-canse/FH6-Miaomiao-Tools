@@ -70,6 +70,11 @@ namespace FH6AutomationShared
             public const int MyHorizonCjkMaxNormalizedLength = 8;
             public const int UiCjkMaxCommonChars = 3;
             public const int UiCjkMaxExtraLength = 4;
+            public const string PaddleDetModelName = "PP-OCRv5_server_det";
+            public const string PaddleRecModelName = "PP-OCRv5_server_rec";
+            public const double NameLowerQuarterCarryToNextRow = 0.75;
+            public const double BottomMarkerMinRelativeY = 0.45;
+            public const double BottomMarkerPreviousColumnMaxRelativeX = 0.25;
         }
 
         internal static class Text

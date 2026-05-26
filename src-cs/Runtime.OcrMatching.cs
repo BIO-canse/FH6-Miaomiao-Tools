@@ -42,9 +42,8 @@ namespace FH6SkillPointOcr
             foreach (OcrMatch word in snapshot.Words)
             {
                 if (word == null || string.IsNullOrWhiteSpace(word.Text)) continue;
-                Point center = word.RectCenter();
                 CellKey cell;
-                if (!grid.MapPoint(center.X, center.Y, out cell)) continue;
+                if (!cellMapper.TryMapName(word, out cell)) continue;
 
                 List<OcrMatch> list;
                 if (!wordsByCell.TryGetValue(cell, out list))

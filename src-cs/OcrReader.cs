@@ -115,8 +115,8 @@ namespace FH6SkillPointOcr
             ValidateBundledPythonRuntime();
             ValidatePaddleNativeRuntimeDlls();
             string site = config.ResolvePath(Path.Combine("runtime", "paddleocr-py"));
-            string det = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", "PP-OCRv5_mobile_det", "inference.pdiparams"));
-            string rec = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", "PP-OCRv5_mobile_rec", "inference.pdiparams"));
+            string det = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", FH6AutomationConstants.Ocr.PaddleDetModelName, "inference.pdiparams"));
+            string rec = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", FH6AutomationConstants.Ocr.PaddleRecModelName, "inference.pdiparams"));
             string paddleLib = config.ResolvePath(Path.Combine("runtime", "paddleocr-py", "paddle", "base", "libpaddle.pyd"));
             if (!Directory.Exists(site)) throw new DirectoryNotFoundException("找不到 PaddleOCR 依赖目录：" + site + "\r\n请完整解压发布包，不要只复制 exe。");
             if (!File.Exists(paddleLib)) throw new FileNotFoundException("找不到 PaddlePaddle 核心库，请完整解压发布包或检查杀毒软件是否隔离文件。", paddleLib);

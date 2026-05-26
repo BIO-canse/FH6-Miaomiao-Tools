@@ -3,7 +3,7 @@
 本目录放脚本运行需要的本地环境。
 
 - `paddleocr-py/`：PaddleOCR PP-OCRv5 运行依赖。
-- `paddleocr-models/`：PP-OCRv5 mobile det/rec 默认模型；server det/rec 保留备用。
+- `paddleocr-models/`：PP-OCRv5 server det/rec 默认模型。建表和制造商识别优先准确率，不再随包携带 mobile 模型。
 - `python/`：发布包内置 Python 运行时；如果存在，程序会优先使用它。
 - `paddleocr-cache/`：PaddleOCR / PaddleX / Paddle 缓存目录；缺模型时首次下载也写到这里。
 - `paddleocr_bridge.py`：C# 常驻调用 PaddleOCR 的桥接脚本。

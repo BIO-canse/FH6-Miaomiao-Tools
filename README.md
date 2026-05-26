@@ -2,6 +2,8 @@
 
 这是一个《地平线6》自动化工具包。核心入口是 `FH6FullAuto.exe`，启动并完成首次设置后，可以自动刷技术点、自动给车辆点技术点、自动删除多余车辆、自动补买车辆；挂机运行即可持续获取超级抽奖。
 
+`v1.2.6` 是近几天的最终稳定版本，重点解决 OCR 准确率和建表偏移问题；除非出现严重问题，短期内不再频繁更新。
+
 ## 下载后怎么用
 
 1. 下载 Release 压缩包并解压。
@@ -145,7 +147,7 @@ Enter 按下 0.1 秒
 
 ## 鸣谢
 
-PaddleOCR 版使用 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv5 mobile 流程。感谢 PaddleOCR 项目提供高质量的中文、英文文字识别能力。
+PaddleOCR 版使用 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 的 PP-OCRv5 server 模型。感谢 PaddleOCR 项目提供高质量的中文、英文文字识别能力。
 
 MediaOCR 版使用 Windows 自带的 `Windows.Media.Ocr` 能力，不额外内置第三方 OCR 模型。
 

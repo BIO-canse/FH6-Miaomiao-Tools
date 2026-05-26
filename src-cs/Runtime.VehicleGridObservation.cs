@@ -38,7 +38,7 @@ namespace FH6SkillPointOcr
             foreach (OcrMatch match in observation.NewBadgeMatches)
             {
                 CellKey cell;
-                if (!grid.MapPoint(match.RectCenter().X, match.RectCenter().Y, out cell)) continue;
+                if (!cellMapper.TryMapBottomMarker(match, out cell)) continue;
                 int score;
                 bool scoreIs600 = observation.PerformanceScores.TryGetValue(cell, out score) && score == 600;
                 if (observation.TargetCells.Contains(cell) && scoreIs600) observation.ValidNewCells.Add(cell);
@@ -119,9 +119,7 @@ namespace FH6SkillPointOcr
                 if (!TryParsePerformanceReading(match.Text, out performanceClass, out score)) continue;
 
                 CellKey cell;
-                Point center = match.RectCenter();
-                if (!grid.MapPoint(center.X, center.Y, out cell)) continue;
-                if (!IsPerformanceScorePosition(match, cell)) continue;
+                if (!cellMapper.TryMapBottomMarker(match, out cell)) continue;
 
                 PerformanceReading old;
                 if (!result.TryGetValue(cell, out old) ||
@@ -146,9 +144,7 @@ namespace FH6SkillPointOcr
                 int score;
                 if (!TryParsePerformanceReading(match.Text, out performanceClass, out score)) continue;
                 CellKey cell;
-                Point center = match.RectCenter();
-                if (!grid.MapPoint(center.X, center.Y, out cell)) continue;
-                if (!IsPerformanceScorePosition(match, cell)) continue;
+                if (!cellMapper.TryMapBottomMarker(match, out cell)) continue;
                 result.Add(match);
             }
 
@@ -164,24 +160,10 @@ namespace FH6SkillPointOcr
             {
                 if (string.IsNullOrWhiteSpace(match.Text)) continue;
                 CellKey cell;
-                Point center = match.RectCenter();
-                if (grid.MapPoint(center.X, center.Y, out cell)) result.Add(cell);
+                if (cellMapper.TryMapGeneric(match, out cell)) result.Add(cell);
             }
 
             return result;
-        }
-
-        private bool IsPerformanceScorePosition(OcrMatch match, CellKey cell)
-        {
-            if (match == null) return false;
-            if (grid.CellStepX <= 0 || grid.CellStepY <= 0) return false;
-
-            Point center = match.RectCenter();
-            double cellLeft = grid.AnchorOriginX + cell.Col * grid.CellStepX;
-            double cellTop = grid.AnchorOriginY + cell.Row * grid.CellStepY;
-            double relativeX = (center.X - cellLeft) / grid.CellStepX;
-            double relativeY = (center.Y - cellTop) / grid.CellStepY;
-            return relativeX >= 0.5 && relativeY >= 0.5;
         }
 
         private static bool TryParsePerformanceReading(string text, out string performanceClass, out int score)

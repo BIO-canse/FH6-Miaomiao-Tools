@@ -14,8 +14,8 @@ if SITE not in sys.path:
     sys.path.insert(0, SITE)
 LOCAL_CACHE_ROOT = os.path.join(ROOT, "runtime", "paddleocr-cache")
 MODEL_ROOT = os.path.join(ROOT, "runtime", "paddleocr-models")
-DEFAULT_DET_MODEL_NAME = os.environ.get("FH6_PADDLEOCR_DET_MODEL", "PP-OCRv5_mobile_det")
-DEFAULT_REC_MODEL_NAME = os.environ.get("FH6_PADDLEOCR_REC_MODEL", "PP-OCRv5_mobile_rec")
+DEFAULT_DET_MODEL_NAME = os.environ.get("FH6_PADDLEOCR_DET_MODEL", "PP-OCRv5_server_det")
+DEFAULT_REC_MODEL_NAME = os.environ.get("FH6_PADDLEOCR_REC_MODEL", "PP-OCRv5_server_rec")
 
 os.makedirs(LOCAL_CACHE_ROOT, exist_ok=True)
 os.environ.setdefault("PADDLE_PDX_CACHE_HOME", LOCAL_CACHE_ROOT)

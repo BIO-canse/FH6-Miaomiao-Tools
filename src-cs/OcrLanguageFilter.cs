@@ -26,7 +26,8 @@ namespace FH6SkillPointOcr
         public static bool IsEnglishOrUnknown(OcrMatch match)
         {
             string language = NormalizeLanguage(match);
-            return language.Length == 0 || language.StartsWith("en", StringComparison.OrdinalIgnoreCase);
+            if (language.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return true;
+            return language.Length == 0 && HasLatinOrDigit(match == null ? "" : match.Text);
         }
 
         private static OcrSnapshot Filter(OcrSnapshot snapshot, Func<OcrMatch, bool> include)
@@ -86,6 +87,21 @@ namespace FH6SkillPointOcr
             return match == null || string.IsNullOrWhiteSpace(match.Language)
                 ? ""
                 : match.Language.Trim();
+        }
+
+        private static bool HasLatinOrDigit(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            foreach (char ch in text)
+            {
+                if ((ch >= 'A' && ch <= 'Z') ||
+                    (ch >= 'a' && ch <= 'z') ||
+                    char.IsDigit(ch))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

@@ -8,6 +8,7 @@
 - `InputController`：C# P/Invoke `SendInput` 键鼠动作。
 - `StateMachine`：主流程状态机。
 - `GridGeometry`：车辆格子的固定像素几何，来自首次手动框选的完整可见车辆格子整体区域。
+- `SemanticCellMapper`：把 OCR 框映射到虚拟格子。不能再只用 OCR 框中心点直接 `MapPoint`；按字段语义处理合理偏移：车名/制造商按上方文字区域映射，落到上一行下 1/4 的名字归到下一行；`全新`、性能分等底部标识按底部区域映射，落到下一列左下角的标识归到左侧当前列。
 - `MouseCellCalibrator`：首次运行时显示框选层，记录完整可见车辆格子整体区域，并按行列数切分单格。
 - `VirtualVehicleList`：运行期全局车辆列表，第一轮定表后跨轮使用，记录目标车、全新、可删、开蓝图车和当前 offset，并实时覆盖保存到本地 JSON。
 - `OverlayRenderer`：透明置顶叠加层，用蓝色边框和线条显示虚拟表格，用左上角状态面板显示脚本状态。
@@ -41,7 +42,7 @@ Exit
 - 调试输出默认打开，稳定后再允许关闭。
 - OCR 启动前必须做依赖自检：除检查 Python、bridge、模型和核心 `.pyd/.dll` 文件是否存在外，还要用同一个便携 Python 启动 bridge 的 `--self-check`，确认 `PIL`、`numpy`、`paddle`、`paddleocr` 和 Paddle 原生库能实际加载。自检 stdout/stderr、进程退出码、Python 路径、模型路径、系统位数等写入 `debug/ocr-dependency-check-last.txt`，失败时停止流程，不让自动化继续到后续错误动作。
 - MediaOCR 版也必须做独立自检：列出 `Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages`，确认能创建中文和英文 OCR engine，把语言列表、最大图片尺寸和实际选中的语言写入 `debug/mediaocr-dependency-check-last.txt`。如果系统没有中文或英文 OCR 能力，启动阶段直接拦截，并提示用户在 Windows 语言/可选功能里安装中文和英文 OCR 语言包；MediaOCR 不降级成单语言识别。
-- PaddleOCR 版必须检查便携 Python、模型、Paddle 原生库和 Microsoft Visual C++ 原生运行库。尤其要在启动自检前检查 `msvcp140.dll`、`vcomp140.dll`。缺失时先拦截自动化，提示用户按 Enter 后从 Microsoft 官方固定链接下载并安装 Microsoft Visual C++ Redistributable 2015-2022 x64；安装器通过 UAC 请求管理员权限。安装完成后重新检测，仍缺失才退出。
+- PaddleOCR 版必须检查便携 Python、PP-OCRv5 server det/rec 模型、Paddle 原生库和 Microsoft Visual C++ 原生运行库。尤其要在启动自检前检查 `msvcp140.dll`、`vcomp140.dll`。缺失时先拦截自动化，提示用户按 Enter 后从 Microsoft 官方固定链接下载并安装 Microsoft Visual C++ Redistributable 2015-2022 x64；安装器通过 UAC 请求管理员权限。安装完成后重新检测，仍缺失才退出。
 - Tesseract 只能作为后续备选 OCR 后端；如果发布包不能同时提供 `chi_sim` 中文训练数据和英文识别能力，就不要发布 Tesseract 版。
 - OCR 文本候选进入业务逻辑前必须做紧凑过滤：例如同一轮同时得到 `xxx 斯巴鲁` 和 `斯巴鲁` 时，只保留精确/最紧凑候选；没有精确候选时才使用最短包含或模糊候选，避免宽泛结果和精确结果一起进入后续逻辑造成多命中或误选。
 - 目标车型识别不能只依赖整行文本匹配。MediaOCR 可能把同一行多个车辆格子的 `IMPREZA 22B-STI` 拼成一个很宽的候选框；建表写格时必须优先按虚拟格子聚合 OCR 词，判断该格内部是否同时存在 `IMPREZA/MPREZA/PREZA` 和 `22B...`，生成单格紧凑候选框，再退到相邻词组、整行/模糊匹配。

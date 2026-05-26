@@ -32,8 +32,7 @@ namespace FH6SkillPointOcr
             foreach (OcrMatch match in matches)
             {
                 CellKey cell;
-                Point center = match.RectCenter();
-                if (grid.MapPoint(center.X, center.Y, out cell)) cells.Add(cell);
+                if (cellMapper.TryMapName(match, out cell)) cells.Add(cell);
             }
             return cells;
         }
@@ -44,8 +43,7 @@ namespace FH6SkillPointOcr
             foreach (OcrMatch match in matches)
             {
                 CellKey cell;
-                Point center = match.RectCenter();
-                if (grid.MapPoint(center.X, center.Y, out cell)) cells.Add(cell);
+                if (cellMapper.TryMapName(match, out cell)) cells.Add(cell);
             }
             return cells;
         }
