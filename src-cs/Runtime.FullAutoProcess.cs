@@ -54,7 +54,7 @@ namespace FH6SkillPointOcr
                 }
 
                 if (fullAutoUserSafeStopRequested) throw new CompletedException("Space+V 安全结束：子程序已退出，主程序停止。");
-                if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(FH6AutomationConstants.Files.MinuteLoopExe + " 退出码 " + fullAutoChildProcess.ExitCode);
+                if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(FH6AutomationConstants.Files.MinuteLoopExe + " 退出码 " + fullAutoChildProcess.ExitCode + ChildLastErrorSummary());
                 if (syncSkillPointsAfterExit) LoadFullAutoSkillPoints("minute loop completed");
             }
             catch
@@ -163,7 +163,7 @@ namespace FH6SkillPointOcr
                 }
 
                 if (fullAutoUserSafeStopRequested) throw new CompletedException("Space+V 安全结束：子程序已退出，主程序停止。");
-                if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(Path.GetFileName(exePath) + " 退出码 " + fullAutoChildProcess.ExitCode);
+                if (fullAutoChildProcess.ExitCode != 0) throw new InvalidOperationException(Path.GetFileName(exePath) + " 退出码 " + fullAutoChildProcess.ExitCode + ChildLastErrorSummary());
             }
             catch
             {
@@ -207,6 +207,22 @@ namespace FH6SkillPointOcr
                 input.SleepMs(Math.Min(
                     FH6AutomationConstants.Timing.FullAutoSleepSliceMs,
                     Math.Max(1, ms - (int)sw.ElapsedMilliseconds)));
+            }
+        }
+
+        private string ChildLastErrorSummary()
+        {
+            try
+            {
+                string path = Path.Combine(config.ResolvePath(config.DebugDir), "last-error.txt");
+                if (!File.Exists(path)) return "";
+                string text = File.ReadAllText(path, Encoding.UTF8);
+                if (text.Length > 5000) text = text.Substring(0, 5000) + "\r\n...(truncated)";
+                return "\r\n\r\n子程序 last-error:\r\n" + text;
+            }
+            catch (Exception ex)
+            {
+                return "\r\n\r\n读取子程序 last-error 失败：" + ex.Message;
             }
         }
 

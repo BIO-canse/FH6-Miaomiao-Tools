@@ -8,7 +8,6 @@ internal static class EnterTapLoop
     private const int ExitVirtualKey = FH6AutomationConstants.Keys.ExitVirtualKey;
     private const int HotkeyModifierVirtualKey = FH6AutomationConstants.Keys.HotkeyModifierVirtualKey;
     private const ushort KeyEnter = FH6AutomationConstants.Keys.Enter;
-    private const ushort KeyUp = FH6AutomationConstants.Keys.Up;
 
     private static int Main()
     {
@@ -30,7 +29,7 @@ internal static class EnterTapLoop
     {
         Console.Title = "EnterTapLoop - Space+C 退出";
         Console.WriteLine("程序已启动。");
-        Console.WriteLine("启动后先等待 10 秒，然后循环：Up、Up、Enter，每次按下 0.1 秒，间隔 0.1 秒。");
+        Console.WriteLine("启动后先等待 10 秒，移动鼠标到屏幕右上角，然后循环：Enter 按下 0.1 秒，等待 0.1 秒。");
         Console.WriteLine("按 Space+C 退出。请在第一次 10 秒等待内切到目标窗口。");
 
         if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.StartupDelayMs)))
@@ -39,12 +38,10 @@ internal static class EnterTapLoop
             return;
         }
 
+        MoveMouseToTopRight();
+
         while (!ExitRequested())
         {
-            if (!TapKey(KeyUp)) break;
-            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs))) break;
-            if (!TapKey(KeyUp)) break;
-            if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs))) break;
             if (!TapKey(KeyEnter)) break;
             if (!WaitOrExit(TimeSpan.FromMilliseconds(FH6AutomationConstants.Timing.RepeatIntervalMs))) break;
         }
@@ -113,11 +110,25 @@ internal static class EnterTapLoop
         }
     }
 
+    private static void MoveMouseToTopRight()
+    {
+        int x = Math.Max(0, GetSystemMetrics(SystemMetricScreenWidth) - 1);
+        SetCursorPos(x, 0);
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    private const int SystemMetricScreenWidth = 0;
 
     private enum InputType : uint
     {

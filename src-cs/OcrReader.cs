@@ -58,8 +58,9 @@ namespace FH6SkillPointOcr
 
         public static void Preflight(Config config)
         {
-            using (new OcrReader(config, null))
+            using (OcrReader reader = new OcrReader(config, null))
             {
+                reader.RunLiveOcrSelfCheck();
             }
         }
 
@@ -416,6 +417,85 @@ namespace FH6SkillPointOcr
             return "0x" + code.ToString("X8", CultureInfo.InvariantCulture);
         }
 
+        private void RunLiveOcrSelfCheck()
+        {
+            string engineName = CurrentEngineName();
+            string reportPath = Path.Combine(diagnosticsDir, "ocr-live-check-last.txt");
+            try
+            {
+                Directory.CreateDirectory(diagnosticsDir);
+                using (Bitmap bitmap = CreateLiveCheckBitmap())
+                {
+                    Screenshot screenshot = new Screenshot(bitmap, 0, 0);
+                    OcrSnapshot snapshot = Read(screenshot, config.OcrPsm, "ocr-live-check");
+                    StringBuilder sb = new StringBuilder();
+                    sb.AppendLine("title=OCR live self-check");
+                    sb.AppendLine("time=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
+                    sb.AppendLine("engine=" + engineName);
+                    sb.AppendLine("word_count=" + (snapshot.Words == null ? 0 : snapshot.Words.Count).ToString(CultureInfo.InvariantCulture));
+                    sb.AppendLine("line_count=" + (snapshot.Lines == null ? 0 : snapshot.Lines.Count).ToString(CultureInfo.InvariantCulture));
+                    AppendTextSection(sb, "engine_diagnostics", snapshot.EngineDiagnostics, 6000);
+                    AppendTextSection(sb, "ocr_stderr", snapshot.ErrorOutput, 12000);
+                    AppendTextSection(sb, "raw_ocr_response", snapshot.RawResponse, 120000);
+                    File.WriteAllText(reportPath, sb.ToString(), Encoding.UTF8);
+                }
+            }
+            catch (Exception ex)
+            {
+                string body =
+                    "title=OCR live self-check failed\r\n" +
+                    "time=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + "\r\n" +
+                    "engine=" + engineName + "\r\n" +
+                    "base_dir=" + config.BaseDir + "\r\n" +
+                    "error=\r\n" + ex + "\r\n";
+                try { File.WriteAllText(reportPath, body, Encoding.UTF8); } catch { }
+                FH6FailureLog.Write("OcrReader.LiveSelfCheck", ex);
+                throw new InvalidOperationException(engineName + " 运行自检失败，已提前拦截。请查看 " + reportPath + " 和 debug/last-error.txt。", ex);
+            }
+        }
+
+        private static Bitmap CreateLiveCheckBitmap()
+        {
+            Bitmap bitmap = new Bitmap(520, 160);
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(Color.White);
+                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                using (Font font = new Font("Microsoft YaHei UI", 34, FontStyle.Bold, GraphicsUnit.Pixel))
+                using (Brush brush = new SolidBrush(Color.Black))
+                {
+                    graphics.DrawString("斯巴鲁 OCR 123", font, brush, 18, 24);
+                    graphics.DrawString("IMPREZA 22B-STI", font, brush, 18, 82);
+                }
+            }
+            return bitmap;
+        }
+
+        private string CurrentEngineName()
+        {
+            if (useMediaOcr) return "MediaOCR";
+            if (usePaddleOcr) return "PaddleOCR";
+            if (useRapidOcr) return "RapidOCR";
+            return "Tesseract";
+        }
+
+        private static void AppendTextSection(StringBuilder sb, string title, string body, int maxChars)
+        {
+            sb.AppendLine("---- " + title + " ----");
+            if (string.IsNullOrEmpty(body))
+            {
+                sb.AppendLine("(empty)");
+                return;
+            }
+            if (body.Length <= maxChars)
+            {
+                sb.AppendLine(body);
+                return;
+            }
+            sb.AppendLine(body.Substring(0, maxChars));
+            sb.AppendLine("...(truncated)");
+        }
+
         public OcrSnapshot Read(Screenshot screenshot)
         {
             return Read(screenshot, config.OcrPsm, null);
@@ -438,14 +518,14 @@ namespace FH6SkillPointOcr
         {
             EnsureMediaOcrProcess();
             OcrEncodedImage image = EncodeOcrImage(screenshot, debugLabel);
-            mediaOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + image.Base64 + "\"}");
-            mediaOcrProcess.StandardInput.Flush();
+            WriteBridgeRequest(mediaOcrProcess, "{\"image_base64\":\"" + image.Base64 + "\"}", "MediaOCR", mediaOcrErrors);
 
             string line = ReadBridgeLineWithTimeout(
                 mediaOcrProcess,
                 FH6AutomationConstants.Ocr.BridgeRequestTimeoutMs,
                 "MediaOCR 识别超时",
-                mediaOcrErrors);
+                mediaOcrErrors,
+                "MediaOCR");
             if (line == null)
             {
                 throw new InvalidOperationException("MediaOCR 进程没有返回结果。" + MediaOcrErrorSuffix());
@@ -485,14 +565,14 @@ namespace FH6SkillPointOcr
         {
             EnsurePaddleOcrProcess();
             OcrEncodedImage image = EncodeOcrImage(screenshot, debugLabel);
-            paddleOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + image.Base64 + "\"}");
-            paddleOcrProcess.StandardInput.Flush();
+            WriteBridgeRequest(paddleOcrProcess, "{\"image_base64\":\"" + image.Base64 + "\"}", "PaddleOCR", paddleOcrErrors);
 
             string line = ReadBridgeLineWithTimeout(
                 paddleOcrProcess,
                 FH6AutomationConstants.Ocr.BridgeRequestTimeoutMs,
                 "PaddleOCR 识别超时",
-                paddleOcrErrors);
+                paddleOcrErrors,
+                "PaddleOCR");
             if (line == null)
             {
                 throw new InvalidOperationException("PaddleOCR 进程没有返回结果。" + PaddleOcrErrorSuffix());
@@ -508,14 +588,14 @@ namespace FH6SkillPointOcr
         {
             EnsureRapidOcrProcess();
             OcrEncodedImage image = EncodeOcrImage(screenshot, debugLabel);
-            rapidOcrProcess.StandardInput.WriteLine("{\"image_base64\":\"" + image.Base64 + "\"}");
-            rapidOcrProcess.StandardInput.Flush();
+            WriteBridgeRequest(rapidOcrProcess, "{\"image_base64\":\"" + image.Base64 + "\"}", "RapidOCR", rapidOcrErrors);
 
             string line = ReadBridgeLineWithTimeout(
                 rapidOcrProcess,
                 FH6AutomationConstants.Ocr.BridgeRequestTimeoutMs,
                 "RapidOCR 识别超时",
-                rapidOcrErrors);
+                rapidOcrErrors,
+                "RapidOCR");
             if (line == null)
             {
                 throw new InvalidOperationException("RapidOCR 进程没有返回结果。" + RapidOcrErrorSuffix());
@@ -944,7 +1024,8 @@ namespace FH6SkillPointOcr
                 mediaOcrProcess,
                 FH6AutomationConstants.Ocr.BridgeInitTimeoutMs,
                 "MediaOCR 初始化超时",
-                mediaOcrErrors);
+                mediaOcrErrors,
+                "MediaOCR");
             if (ready == null || !ready.Contains("\"ready\""))
             {
                 throw new InvalidOperationException("MediaOCR 初始化失败。" + MediaOcrErrorSuffix());
@@ -978,7 +1059,8 @@ namespace FH6SkillPointOcr
                 paddleOcrProcess,
                 FH6AutomationConstants.Ocr.BridgeInitTimeoutMs,
                 "PaddleOCR 初始化超时",
-                paddleOcrErrors);
+                paddleOcrErrors,
+                "PaddleOCR");
             if (ready == null || !ready.Contains("\"ready\""))
             {
                 throw new InvalidOperationException("PaddleOCR 初始化失败。" + PaddleOcrErrorSuffix());
@@ -1012,14 +1094,44 @@ namespace FH6SkillPointOcr
                 rapidOcrProcess,
                 FH6AutomationConstants.Ocr.BridgeInitTimeoutMs,
                 "RapidOCR 初始化超时",
-                rapidOcrErrors);
+                rapidOcrErrors,
+                "RapidOCR");
             if (ready == null || !ready.Contains("\"ready\""))
             {
                 throw new InvalidOperationException("RapidOCR 初始化失败。" + RapidOcrErrorSuffix());
             }
         }
 
-        private string ReadBridgeLineWithTimeout(Process process, int timeoutMs, string context, StringBuilder errors)
+        private void WriteBridgeRequest(Process process, string request, string engineName, StringBuilder errors)
+        {
+            try
+            {
+                if (process == null)
+                {
+                    throw new InvalidOperationException(engineName + " OCR 进程不存在。");
+                }
+                if (process.HasExited)
+                {
+                    throw BuildBridgeExitedException(engineName + " OCR 请求前进程已退出", process, engineName, errors);
+                }
+                process.StandardInput.WriteLine(request);
+                process.StandardInput.Flush();
+            }
+            catch (StopRequestedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                if (ex is InvalidOperationException && ex.Message.IndexOf("OCR 请求前进程已退出", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    throw;
+                }
+                throw new InvalidOperationException(engineName + " OCR 请求写入失败，OCR 子进程可能已经崩溃。" + BridgeProcessStatus(process, engineName, errors), ex);
+            }
+        }
+
+        private string ReadBridgeLineWithTimeout(Process process, int timeoutMs, string context, StringBuilder errors, string engineName)
         {
             System.Threading.Tasks.Task<string> readTask = process.StandardOutput.ReadLineAsync();
             Stopwatch stopwatch = Stopwatch.StartNew();
@@ -1028,11 +1140,21 @@ namespace FH6SkillPointOcr
                 PollOcrWaitHotkeys(process);
                 if (readTask.Wait(FH6AutomationConstants.Timing.SleepSliceMs))
                 {
-                    return readTask.Result;
+                    string line = readTask.Result;
+                    if (line != null) return line;
+                    if (process.HasExited)
+                    {
+                        throw BuildBridgeExitedException(context + "：OCR 子进程没有返回内容", process, engineName, errors);
+                    }
+                    return null;
                 }
-                if (process.HasExited && readTask.IsCompleted)
+                if (process.HasExited)
                 {
-                    return readTask.Result;
+                    if (readTask.Wait(200) && !string.IsNullOrWhiteSpace(readTask.Result))
+                    {
+                        return readTask.Result;
+                    }
+                    throw BuildBridgeExitedException(context + "：OCR 子进程已退出", process, engineName, errors);
                 }
                 if (stopwatch.ElapsedMilliseconds < timeoutMs) continue;
 
@@ -1045,6 +1167,62 @@ namespace FH6SkillPointOcr
                 string suffix = string.IsNullOrWhiteSpace(stderr) ? "" : "\r\nSTDERR:\r\n" + stderr;
                 throw new TimeoutException(context + "，超过 " + (timeoutMs / 1000).ToString(CultureInfo.InvariantCulture) + " 秒。" + suffix);
             }
+        }
+
+        private Exception BuildBridgeExitedException(string context, Process process, string engineName, StringBuilder errors)
+        {
+            return new InvalidOperationException(context + "。" + BridgeProcessStatus(process, engineName, errors));
+        }
+
+        private string BridgeProcessStatus(Process process, string engineName, StringBuilder errors)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine();
+            sb.AppendLine("OCR子进程状态：");
+            sb.AppendLine("engine=" + engineName);
+            if (process == null)
+            {
+                sb.AppendLine("process=null");
+            }
+            else
+            {
+                try { sb.AppendLine("process_id=" + process.Id.ToString(CultureInfo.InvariantCulture)); } catch { }
+                bool hasExited = false;
+                try
+                {
+                    hasExited = process.HasExited;
+                    sb.AppendLine("process_has_exited=" + hasExited);
+                }
+                catch
+                {
+                    sb.AppendLine("process_has_exited=unknown");
+                }
+                if (hasExited)
+                {
+                    try
+                    {
+                        int exitCode = process.ExitCode;
+                        sb.AppendLine("process_exit_code=" + exitCode.ToString(CultureInfo.InvariantCulture));
+                        sb.AppendLine("process_exit_description=" + DescribeNativeExitCode(exitCode));
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            string stderr;
+            lock (errors)
+            {
+                stderr = errors == null ? "" : errors.ToString();
+            }
+            if (!string.IsNullOrWhiteSpace(stderr))
+            {
+                sb.AppendLine();
+                sb.AppendLine(engineName + " stderr:");
+                sb.AppendLine(stderr);
+            }
+            return sb.ToString();
         }
 
         private void WaitForProcessExitWithHotkeys(Process process, int timeoutMs, string context)

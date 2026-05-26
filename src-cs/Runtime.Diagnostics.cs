@@ -140,6 +140,8 @@ namespace FH6SkillPointOcr
                 string path = Path.Combine(debugDir, "ocr-exception-last.txt");
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+                sb.AppendLine("category=" + FatalStopReporter.Classify(ex));
+                sb.AppendLine("stage=" + bigStage);
                 sb.AppendLine("status=" + status);
                 sb.AppendLine("next=" + nextAction);
                 sb.AppendLine(ex.ToString());

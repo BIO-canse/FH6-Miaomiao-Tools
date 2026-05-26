@@ -25,17 +25,19 @@ namespace FH6SkillPointOcr
         {
             EnableDpiAwareness();
             FH6FailureLog.InstallGlobalHandlers("FH6SkillPointOcr.Program");
+            CliOptions options = null;
+            Config config = null;
 
             try
             {
-                CliOptions options = CliOptions.Parse(args);
+                options = CliOptions.Parse(args);
                 if (options.ShowHelp)
                 {
                     Console.WriteLine("FH6SkillPointOcr.exe [--config path] [--dry-run] [--no-overlay] [--mode normal|debug|reset] [--task skill|delete|fullauto|blueprint-test] [--quick-verify|--normal-full-auto] [--handoff] [--skill-points n] [--credits n] [--skill-points-state-file path] [--skill-points-log-file path] [--safe-stop-file path]");
                     return 0;
                 }
 
-                Config config = Config.Load(options.ConfigPath);
+                config = Config.Load(options.ConfigPath);
                 EmergencyStopWatcherLauncher.Start(config.BaseDir);
                 if (options.NoOverlay)
                 {
@@ -83,6 +85,7 @@ namespace FH6SkillPointOcr
             {
                 Console.WriteLine("[ERROR] " + ex.Message);
                 FH6FailureLog.Write("FH6SkillPointOcr.Program", ex);
+                FatalStopReporter.Report(ex, config, options);
                 return 1;
             }
         }
