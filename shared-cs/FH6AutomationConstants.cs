@@ -57,6 +57,9 @@ namespace FH6AutomationShared
             public const int Psm = 6;
             public const int BridgeInitTimeoutMs = 180000;
             public const int BridgeRequestTimeoutMs = 120000;
+            public const int VcRedistInstallTimeoutMs = 600000;
+            public const string VcRedistX64Url = "https://aka.ms/vs/17/release/vc_redist.x64.exe";
+            public const string VcRedistX64FileName = "vc_redist.x64.exe";
             public const int GridCapturePaddingPx = 24;
             public const int UiFindAttempts = 6;
             public const int TargetVehicleLatinFuzzyDistance = 2;

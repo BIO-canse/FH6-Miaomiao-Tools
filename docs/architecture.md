@@ -40,7 +40,9 @@ Exit
 - 可由用户调节的运行参数放 `config/default.json`；跨程序共用的默认值和状态码放 `shared-cs/FH6AutomationConstants.cs`。
 - 调试输出默认打开，稳定后再允许关闭。
 - OCR 启动前必须做依赖自检：除检查 Python、bridge、模型和核心 `.pyd/.dll` 文件是否存在外，还要用同一个便携 Python 启动 bridge 的 `--self-check`，确认 `PIL`、`numpy`、`paddle`、`paddleocr` 和 Paddle 原生库能实际加载。自检 stdout/stderr、进程退出码、Python 路径、模型路径、系统位数等写入 `debug/ocr-dependency-check-last.txt`，失败时停止流程，不让自动化继续到后续错误动作。
-- MediaOCR 版也必须做独立自检：列出 `Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages`，确认能创建中文和英文 OCR engine，把语言列表、最大图片尺寸和实际选中的语言写入 `debug/mediaocr-dependency-check-last.txt`。如果系统没有中文 OCR 能力，启动阶段直接提示用户改用 PaddleOCR 版或在 Windows 语言/可选功能里安装中文 OCR。
+- MediaOCR 版也必须做独立自检：列出 `Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages`，确认能创建中文和英文 OCR engine，把语言列表、最大图片尺寸和实际选中的语言写入 `debug/mediaocr-dependency-check-last.txt`。如果系统没有中文或英文 OCR 能力，启动阶段直接拦截，并提示用户在 Windows 语言/可选功能里安装中文和英文 OCR 语言包；MediaOCR 不降级成单语言识别。
+- PaddleOCR 版必须检查便携 Python、模型、Paddle 原生库和 Microsoft Visual C++ 原生运行库。尤其要在启动自检前检查 `msvcp140.dll`、`vcomp140.dll`。缺失时先拦截自动化，提示用户按 Enter 后从 Microsoft 官方固定链接下载并安装 Microsoft Visual C++ Redistributable 2015-2022 x64；安装器通过 UAC 请求管理员权限。安装完成后重新检测，仍缺失才退出。
+- Tesseract 只能作为后续备选 OCR 后端；如果发布包不能同时提供 `chi_sim` 中文训练数据和英文识别能力，就不要发布 Tesseract 版。
 - OCR 文本候选进入业务逻辑前必须做紧凑过滤：例如同一轮同时得到 `xxx 斯巴鲁` 和 `斯巴鲁` 时，只保留精确/最紧凑候选；没有精确候选时才使用最短包含或模糊候选，避免宽泛结果和精确结果一起进入后续逻辑造成多命中或误选。
 - 目标车型识别不能只依赖整行文本匹配。MediaOCR 可能把同一行多个车辆格子的 `IMPREZA 22B-STI` 拼成一个很宽的候选框；建表写格时必须优先按虚拟格子聚合 OCR 词，判断该格内部是否同时存在 `IMPREZA/MPREZA/PREZA` 和 `22B...`，生成单格紧凑候选框，再退到相邻词组、整行/模糊匹配。
 - MediaOCR 版在车辆格 OCR 时走专属列切分流程：先截一次完整车辆格区域，本地第 0 列是已知保留列，不参与 OCR；从第 1 列开始按用户配置的完整可见列逐列裁切，每列启动独立 MediaOCR reader 识别，最后把识别结果按绝对坐标合并。这个处理只用于新 OCR/MediaOCR，PaddleOCR 和旧 OCR 继续使用整块车辆格 OCR。业务层不要直接判断 OCR 后端；OCR 适配层通过 `SkippedLeadingGridColumns` 告诉建表阶段本次前置列没有识别，建表只消费这个元数据。

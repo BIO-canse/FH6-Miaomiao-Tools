@@ -113,6 +113,7 @@ namespace FH6SkillPointOcr
         private void ValidatePaddleRuntime()
         {
             ValidateBundledPythonRuntime();
+            ValidatePaddleNativeRuntimeDlls();
             string site = config.ResolvePath(Path.Combine("runtime", "paddleocr-py"));
             string det = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", "PP-OCRv5_mobile_det", "inference.pdiparams"));
             string rec = config.ResolvePath(Path.Combine("runtime", "paddleocr-models", "PP-OCRv5_mobile_rec", "inference.pdiparams"));
@@ -135,6 +136,229 @@ namespace FH6SkillPointOcr
             if (!File.Exists(pythonDll)) throw new FileNotFoundException("包内 Python 不完整，缺少 python312.dll。请完整解压发布包。", pythonDll);
             if (!File.Exists(vcRuntime)) throw new FileNotFoundException("包内 Python 不完整，缺少 vcruntime140.dll。请完整解压发布包。", vcRuntime);
             if (!File.Exists(vcRuntimeExtra)) throw new FileNotFoundException("包内 Python 不完整，缺少 vcruntime140_1.dll。请完整解压发布包。", vcRuntimeExtra);
+        }
+
+        private void ValidatePaddleNativeRuntimeDlls()
+        {
+            List<string> missing = MissingPaddleNativeRuntimeDlls();
+            if (missing.Count == 0) return;
+
+            string installLogPath = Path.Combine(diagnosticsDir, "vcredist-install-last.txt");
+            WriteVcRedistInstallLogHeader(installLogPath, missing);
+
+            if (!CanPromptForVcRedistInstall())
+            {
+                throw new InvalidOperationException(
+                    MissingVcRedistMessage(missing) +
+                    "\r\n当前进程不能交互确认安装。请手动安装 Microsoft Visual C++ Redistributable 2015-2022 x64 后重试。" +
+                    "\r\n官方下载链接：" + FH6AutomationConstants.Ocr.VcRedistX64Url +
+                    "\r\n安装日志：" + installLogPath);
+            }
+
+            Console.WriteLine("[OCR_DEP] PaddleOCR 缺少 Microsoft Visual C++ 运行库：" + string.Join(", ", missing.ToArray()));
+            Console.WriteLine("[OCR_DEP] 按 Enter 自动下载并安装 Microsoft Visual C++ Redistributable 2015-2022 x64。");
+            Console.WriteLine("[OCR_DEP] 安装时 Windows 可能弹出管理员权限窗口；不想安装请直接关闭窗口。");
+            Console.WriteLine("[OCR_DEP] 官方来源：" + FH6AutomationConstants.Ocr.VcRedistX64Url);
+            Console.ReadLine();
+
+            InstallVcRedistX64(installLogPath);
+            missing = MissingPaddleNativeRuntimeDlls();
+            AppendVcRedistInstallLog(installLogPath, "after_install_missing=" + string.Join(",", missing.ToArray()));
+            if (missing.Count == 0)
+            {
+                Console.WriteLine("[OCR_DEP] VC++ 运行库安装完成，PaddleOCR 依赖检测继续。");
+                return;
+            }
+
+            throw new InvalidOperationException(
+                MissingVcRedistMessage(missing) +
+                "\r\n已经尝试自动安装，但重新检测仍缺失。可能需要重启电脑，或安装器被取消/杀毒软件拦截。" +
+                "\r\n安装日志：" + installLogPath);
+        }
+
+        private List<string> MissingPaddleNativeRuntimeDlls()
+        {
+            List<string> missing = new List<string>();
+            string[] required = new[] { "msvcp140.dll", "vcomp140.dll" };
+            foreach (string dllName in required)
+            {
+                string found = FindNativeRuntimeDll(dllName);
+                if (string.IsNullOrWhiteSpace(found)) missing.Add(dllName);
+            }
+            return missing;
+        }
+
+        private string MissingVcRedistMessage(List<string> missing)
+        {
+            return "PaddleOCR 运行环境缺少 Microsoft Visual C++ 原生运行库：" + string.Join(", ", missing.ToArray()) + "\r\n" +
+                "需要安装 Microsoft Visual C++ Redistributable 2015-2022 x64，或改用 MediaOCR 版。\r\n" +
+                "如果已经安装，请检查杀毒软件是否拦截了系统 DLL 或发布包 runtime 目录。";
+        }
+
+        private bool CanPromptForVcRedistInstall()
+        {
+            try
+            {
+                return Environment.UserInteractive && !Console.IsInputRedirected;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void InstallVcRedistX64(string installLogPath)
+        {
+            string installerDir = Path.Combine(config.BaseDir, "runtime", "installers");
+            Directory.CreateDirectory(installerDir);
+            string installerPath = Path.Combine(installerDir, FH6AutomationConstants.Ocr.VcRedistX64FileName);
+
+            DownloadVcRedistInstaller(installerPath, installLogPath);
+            int exitCode = RunVcRedistInstaller(installerPath, installLogPath);
+            AppendVcRedistInstallLog(installLogPath, "installer_exit_code=" + exitCode.ToString(CultureInfo.InvariantCulture));
+            if (exitCode == 0 || exitCode == 3010 || exitCode == 1638)
+            {
+                if (exitCode == 3010)
+                {
+                    Console.WriteLine("[OCR_DEP] VC++ 运行库安装器提示需要重启。程序会先重新检测，仍缺失时请重启后再运行。");
+                }
+                return;
+            }
+
+            throw new InvalidOperationException(
+                "VC++ 运行库安装器返回异常退出码：" + exitCode.ToString(CultureInfo.InvariantCulture) +
+                "\r\n安装日志：" + installLogPath);
+        }
+
+        private void DownloadVcRedistInstaller(string installerPath, string installLogPath)
+        {
+            FileInfo existing = new FileInfo(installerPath);
+            if (existing.Exists && existing.Length > 1024 * 1024)
+            {
+                AppendVcRedistInstallLog(installLogPath, "download_skipped_existing=" + installerPath + ", bytes=" + existing.Length.ToString(CultureInfo.InvariantCulture));
+                return;
+            }
+
+            Console.WriteLine("[OCR_DEP] 正在下载 VC++ 运行库安装器...");
+            AppendVcRedistInstallLog(installLogPath, "download_url=" + FH6AutomationConstants.Ocr.VcRedistX64Url);
+            AppendVcRedistInstallLog(installLogPath, "download_target=" + installerPath);
+            try
+            {
+                System.Net.ServicePointManager.SecurityProtocol =
+                    System.Net.ServicePointManager.SecurityProtocol | (System.Net.SecurityProtocolType)3072;
+            }
+            catch
+            {
+            }
+
+            using (System.Net.WebClient client = new System.Net.WebClient())
+            {
+                client.DownloadFile(FH6AutomationConstants.Ocr.VcRedistX64Url, installerPath);
+            }
+
+            FileInfo downloaded = new FileInfo(installerPath);
+            AppendVcRedistInstallLog(installLogPath, "downloaded_bytes=" + (downloaded.Exists ? downloaded.Length.ToString(CultureInfo.InvariantCulture) : "missing"));
+            if (!downloaded.Exists || downloaded.Length <= 1024 * 1024)
+            {
+                throw new InvalidOperationException("VC++ 运行库安装器下载失败或文件不完整：" + installerPath);
+            }
+        }
+
+        private int RunVcRedistInstaller(string installerPath, string installLogPath)
+        {
+            Console.WriteLine("[OCR_DEP] 正在启动安装器；如果弹出权限请求，请选择允许。");
+            AppendVcRedistInstallLog(installLogPath, "installer_path=" + installerPath);
+            AppendVcRedistInstallLog(installLogPath, "installer_args=/install /passive /norestart");
+
+            ProcessStartInfo psi = new ProcessStartInfo();
+            psi.FileName = installerPath;
+            psi.Arguments = "/install /passive /norestart";
+            psi.WorkingDirectory = Path.GetDirectoryName(installerPath);
+            psi.UseShellExecute = true;
+            psi.Verb = "runas";
+
+            try
+            {
+                using (Process process = Process.Start(psi))
+                {
+                    if (process == null) throw new InvalidOperationException("VC++ 运行库安装器没有启动。");
+                    WaitForProcessExitWithHotkeys(process, FH6AutomationConstants.Ocr.VcRedistInstallTimeoutMs, "VC++ 运行库安装超时");
+                    return process.ExitCode;
+                }
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                AppendVcRedistInstallLog(installLogPath, "installer_start_error=" + ex);
+                if (ex.NativeErrorCode == 1223)
+                {
+                    throw new InvalidOperationException("用户取消了 VC++ 运行库安装权限请求。", ex);
+                }
+                throw new InvalidOperationException("无法启动 VC++ 运行库安装器。", ex);
+            }
+        }
+
+        private void WriteVcRedistInstallLogHeader(string installLogPath, List<string> missing)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(installLogPath));
+                string body =
+                    BuildDependencyReportHeader("VC++ Redistributable auto install") +
+                    "missing_before=" + string.Join(",", missing.ToArray()) + "\r\n" +
+                    "url=" + FH6AutomationConstants.Ocr.VcRedistX64Url + "\r\n";
+                File.WriteAllText(installLogPath, body, Encoding.UTF8);
+            }
+            catch
+            {
+            }
+        }
+
+        private void AppendVcRedistInstallLog(string installLogPath, string line)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(installLogPath));
+                File.AppendAllText(
+                    installLogPath,
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + line + "\r\n",
+                    Encoding.UTF8);
+            }
+            catch
+            {
+            }
+        }
+
+        private string FindNativeRuntimeDll(string dllName)
+        {
+            List<string> candidates = new List<string>();
+            candidates.Add(Path.Combine(config.BaseDir, "runtime", "python", dllName));
+            candidates.Add(Path.Combine(config.BaseDir, "runtime", "paddleocr-py", "paddle", "libs", dllName));
+            candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), dllName));
+
+            string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+            foreach (string part in pathEnv.Split(Path.PathSeparator))
+            {
+                if (string.IsNullOrWhiteSpace(part)) continue;
+                try
+                {
+                    candidates.Add(Path.Combine(part.Trim(), dllName));
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (string candidate in candidates)
+            {
+                try
+                {
+                    if (File.Exists(candidate)) return candidate;
+                }
+                catch
+                {
+                }
+            }
+            return "";
         }
 
         private void ValidateMediaOcrRuntime()
@@ -244,6 +468,8 @@ namespace FH6SkillPointOcr
                             "python_exists=" + File.Exists(paddleOcrPython) + "\r\n" +
                             "bridge=" + paddleOcrBridge + "\r\n" +
                             "bridge_exists=" + File.Exists(paddleOcrBridge) + "\r\n" +
+                            "msvcp140=" + FindNativeRuntimeDll("msvcp140.dll") + "\r\n" +
+                            "vcomp140=" + FindNativeRuntimeDll("vcomp140.dll") + "\r\n" +
                             "signature=" + signature + "\r\n" +
                             "stamp=" + stampPath + "\r\n",
                             Encoding.UTF8);
@@ -270,6 +496,8 @@ namespace FH6SkillPointOcr
                         "python_exists=" + File.Exists(paddleOcrPython) + "\r\n" +
                         "bridge=" + paddleOcrBridge + "\r\n" +
                         "bridge_exists=" + File.Exists(paddleOcrBridge) + "\r\n" +
+                        "msvcp140=" + FindNativeRuntimeDll("msvcp140.dll") + "\r\n" +
+                        "vcomp140=" + FindNativeRuntimeDll("vcomp140.dll") + "\r\n" +
                         "signature=" + signature + "\r\n" +
                         "exit_code=" + process.ExitCode.ToString(CultureInfo.InvariantCulture) + "\r\n" +
                         "exit_description=" + exitDescription + "\r\n" +
@@ -344,6 +572,8 @@ namespace FH6SkillPointOcr
                     FileSignature(det),
                     FileSignature(rec),
                     FileSignature(paddleLib),
+                    FileSignature(FindNativeRuntimeDll("msvcp140.dll")),
+                    FileSignature(FindNativeRuntimeDll("vcomp140.dll")),
                     FileSignature(Path.Combine(config.BaseDir, "runtime", "python", "python312.dll")),
                     FileSignature(Path.Combine(config.BaseDir, "runtime", "python", "vcruntime140.dll")),
                     FileSignature(Path.Combine(config.BaseDir, "runtime", "python", "vcruntime140_1.dll"))

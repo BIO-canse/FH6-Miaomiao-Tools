@@ -20,8 +20,8 @@
 
 Release 会提供两个 OCR 版本：
 
-- `MediaOCR` 版：体积更小，使用 Windows 自带 `Media.Ocr`。推荐先试这个版本；如果系统没有中文/英文 OCR 语言能力，启动自检会直接报错并写入日志。
-- `PaddleOCR` 版：体积更大，内置 PaddleOCR PP-OCRv5 和便携 Python，识别能力更强；如果 MediaOCR 版识别不稳定或系统缺少 OCR 语言包，用这个版本。
+- `MediaOCR` 版：体积更小，使用 Windows 自带 `Media.Ocr`。推荐先试这个版本；它要求系统同时具备中文和英文 OCR 语言能力，缺少任意一个都会在启动自检时报错并写入日志，需要在 Windows 语言/可选功能里安装对应 OCR 语言包。
+- `PaddleOCR` 版：体积更大，内置 PaddleOCR PP-OCRv5 和便携 Python，识别能力更强；如果 MediaOCR 版识别不稳定或系统缺少 OCR 语言包，用这个版本。PaddleOCR 版还需要系统有 Microsoft Visual C++ 2015-2022 x64 运行库；缺少时启动自检会拦截自动化，按 Enter 会自动下载并安装，管理员权限由 Windows 弹窗请求。
 
 急停快捷键：
 
@@ -134,9 +134,9 @@ Release 会提供两个 OCR 版本：
 启动后等待 10 秒，然后不断执行：
 
 ```text
-Up
-Up
-Enter
+把鼠标移到屏幕右上角
+Enter 按下 0.1 秒
+等待 0.1 秒
 ```
 
 ## 不建议手动打开的内部组件
